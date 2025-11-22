@@ -74,32 +74,67 @@ function stopClickHouse(): void {
   }
 }
 
+// Chain IDs for Etherscan V2 API
+const chainIds: Record<string, string> = {
+  mainnet: "1",
+  goerli: "5",
+  sepolia: "11155111",
+  polygon: "137",
+  arbitrum: "42161",
+  optimism: "10",
+  base: "8453",
+};
+
+// Fetch implementation address for proxy contracts
+async function fetchImplementationAddress(contractAddress: string, network: string = "mainnet"): Promise<string | null> {
+  const apiKey = process.env.ETHERSCAN_API_KEY || "";
+  const chainId = chainIds[network] || chainIds.mainnet;
+
+  const url = `https://api.etherscan.io/v2/api?chainid=${chainId}&module=contract&action=getsourcecode&address=${contractAddress}&apikey=${apiKey}`;
+
+  const response = await fetch(url);
+  const data = await response.json() as { status: string; result: any[] };
+
+  if (data.status === "1" && data.result[0]?.Implementation) {
+    return data.result[0].Implementation;
+  }
+
+  return null;
+}
+
 // Fetch ABI from Etherscan (V2 API)
 async function fetchABI(contractAddress: string, network: string = "mainnet"): Promise<any> {
   const apiKey = process.env.ETHERSCAN_API_KEY || "";
-
-  // Chain IDs for Etherscan V2 API
-  const chainIds: Record<string, string> = {
-    mainnet: "1",
-    goerli: "5",
-    sepolia: "11155111",
-    polygon: "137",
-    arbitrum: "42161",
-    optimism: "10",
-    base: "8453",
-  };
-
   const chainId = chainIds[network] || chainIds.mainnet;
-  const url = `https://api.etherscan.io/v2/api?chainid=${chainId}&module=contract&action=getabi&address=${contractAddress}&apikey=${apiKey}`;
 
-  const response = await fetch(url);
-  const data = await response.json() as { status: string; message?: string; result: string };
+  // First try to get the ABI directly
+  let url = `https://api.etherscan.io/v2/api?chainid=${chainId}&module=contract&action=getabi&address=${contractAddress}&apikey=${apiKey}`;
+  let response = await fetch(url);
+  let data = await response.json() as { status: string; message?: string; result: string };
 
   if (data.status !== "1") {
     throw new Error(`Failed to fetch ABI: ${data.message || data.result}`);
   }
 
-  return JSON.parse(data.result);
+  let abi = JSON.parse(data.result);
+
+  // Check if this looks like a proxy (only has Upgraded event or very few events)
+  const events = abi.filter((item: any) => item.type === "event");
+  if (events.length <= 2 && events.some((e: any) => e.name === "Upgraded" || e.name === "AdminChanged")) {
+    // Try to fetch implementation ABI
+    const implAddress = await fetchImplementationAddress(contractAddress, network);
+    if (implAddress) {
+      url = `https://api.etherscan.io/v2/api?chainid=${chainId}&module=contract&action=getabi&address=${implAddress}&apikey=${apiKey}`;
+      response = await fetch(url);
+      data = await response.json() as { status: string; message?: string; result: string };
+
+      if (data.status === "1") {
+        abi = JSON.parse(data.result);
+      }
+    }
+  }
+
+  return abi;
 }
 
 // Extract events from ABI
@@ -109,6 +144,10 @@ function extractEvents(abi: any[]): any[] {
 
 // Generate event signature
 function generateEventSignature(event: any): string {
+  // Use custom signature if provided (for proxy contracts)
+  if (event._customSignature) {
+    return event._customSignature;
+  }
   const inputs = event.inputs.map((input: any) => input.type).join(",");
   return `${event.name}(${inputs})`;
 }
@@ -325,7 +364,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "generate_pipe",
         description:
-          "Generate a Subsquid pipe for indexing events from a smart contract. Fetches ABI from Etherscan and creates the pipe code.",
+          "Generate a Subsquid pipe for indexing blockchain events. Fetches ABI from Etherscan and creates pipe code. Use get_contract_events first to see available events.",
         inputSchema: {
           type: "object",
           properties: {
@@ -336,21 +375,37 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             network: {
               type: "string",
               description:
-                "Network name (mainnet, goerli, sepolia, polygon, arbitrum, optimism, base)",
+                "Network: mainnet, sepolia, polygon, arbitrum, optimism, base",
               default: "mainnet",
             },
             tableName: {
               type: "string",
-              description: "Name for the ClickHouse table",
+              description: "Name for the ClickHouse table and CSV file",
             },
             fromBlock: {
               type: "number",
-              description: "Block number to start indexing from",
+              description: "Starting block number (use contract deployment block for efficiency)",
               default: 0,
             },
             outputFile: {
               type: "string",
-              description: "Output filename for the generated pipe",
+              description: "Output filename (e.g., pipe-aave.ts)",
+            },
+            events: {
+              type: "array",
+              items: { type: "string" },
+              description: "Specific event names to index (e.g., ['LiquidationCall', 'Supply']). If omitted, indexes all events.",
+            },
+            customEvents: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  name: { type: "string" },
+                  signature: { type: "string" },
+                },
+              },
+              description: "Custom event signatures for proxy contracts (e.g., [{name: 'LiquidationCall', signature: 'LiquidationCall(address,address,address,uint256,uint256,address,bool)'}]). Use when ABI doesn't contain the events.",
             },
           },
           required: ["contractAddress", "tableName", "outputFile"],
@@ -395,7 +450,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "get_contract_events",
         description:
-          "Fetch and list all events from a contract's ABI without generating a pipe",
+          "Fetch and list all events from a contract's ABI. Use this first to understand the contract's events before generating a pipe. Shows event names, signatures, and parameter details (indexed params become topics, non-indexed go in data).",
         inputSchema: {
           type: "object",
           properties: {
@@ -405,7 +460,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             network: {
               type: "string",
-              description: "Network name",
+              description: "Network: mainnet, sepolia, polygon, arbitrum, optimism, base",
               default: "mainnet",
             },
           },
@@ -428,21 +483,51 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           tableName,
           fromBlock = 0,
           outputFile,
+          events: eventFilter,
+          customEvents,
         } = args as any;
 
-        // Fetch ABI
-        const abi = await fetchABI(contractAddress, network);
-        const events = extractEvents(abi);
+        let events: any[] = [];
 
-        if (events.length === 0) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: `No events found in contract ${contractAddress}`,
-              },
-            ],
-          };
+        // Use custom events if provided (for proxy contracts)
+        if (customEvents && Array.isArray(customEvents) && customEvents.length > 0) {
+          events = customEvents.map((ce: any) => ({
+            name: ce.name,
+            inputs: [], // We don't need inputs for signature-based generation
+            _customSignature: ce.signature,
+          }));
+        } else {
+          // Fetch ABI from Etherscan
+          const abi = await fetchABI(contractAddress, network);
+          events = extractEvents(abi);
+
+          if (events.length === 0) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `No events found in contract ${contractAddress}. For proxy contracts, use customEvents parameter with event signatures.`,
+                },
+              ],
+            };
+          }
+
+          // Filter events if specified
+          if (eventFilter && Array.isArray(eventFilter) && eventFilter.length > 0) {
+            const filtered = events.filter((e) => eventFilter.includes(e.name));
+            if (filtered.length === 0) {
+              const available = events.map((e) => e.name).join(", ");
+              return {
+                content: [
+                  {
+                    type: "text",
+                    text: `None of the specified events found. Available: ${available}\n\nFor proxy contracts, use customEvents parameter.`,
+                  },
+                ],
+              };
+            }
+            events = filtered;
+          }
         }
 
         // Generate pipe code
@@ -464,7 +549,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: "text",
-              text: `Successfully generated pipe at ${outputPath}\n\nEvents indexed: ${eventList}\n\nTo run: npx tsx ${outputFile}`,
+              text: `Successfully generated pipe at ${outputPath}\n\nEvents indexed: ${eventList}\n\nTo run: use run_pipe tool with pipeFile="${outputFile}"`,
             },
           ],
         };
