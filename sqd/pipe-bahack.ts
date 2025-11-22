@@ -1,13 +1,21 @@
-import { createClient } from '@clickhouse/client';
-import { evmPortalSource, EvmQueryBuilder, type EvmPortalData } from '@subsquid/pipes/evm';
-import { clickhouseTarget } from '@subsquid/pipes/targets/clickhouse';
-import { keccak256, toBytes, decodeAbiParameters } from 'viem';
+import { createClient } from "@clickhouse/client";
+import {
+  evmPortalSource,
+  EvmQueryBuilder,
+  type EvmPortalData,
+} from "@subsquid/pipes/evm";
+import { clickhouseTarget } from "@subsquid/pipes/targets/clickhouse";
+import { keccak256, toBytes, decodeAbiParameters } from "viem";
 
 // Configuration
 const CONFIG = {
-  CONTRACT_ADDRESS: process.env.CONTRACT_ADDRESS || "0x5b0b1cbF40C910f58B8Ff1d48A629f257a556B99",
+  CONTRACT_ADDRESS:
+    process.env.CONTRACT_ADDRESS ||
+    "0x5b0b1cbF40C910f58B8Ff1d48A629f257a556B99",
   FROM_BLOCK: parseInt(process.env.FROM_BLOCK || "9680000"),
-  PORTAL_URL: process.env.PORTAL_URL || "https://portal.sqd.dev/datasets/ethereum-sepolia",
+  PORTAL_URL:
+    process.env.PORTAL_URL ||
+    "https://portal.sqd.dev/datasets/ethereum-sepolia",
 
   CLICKHOUSE_URL: process.env.CLICKHOUSE_URL || "http://localhost:8123",
   CLICKHOUSE_USER: process.env.CLICKHOUSE_USER || "default",
@@ -15,10 +23,24 @@ const CONFIG = {
 };
 
 // Event signature: DataUploaded(string,string,uint256,string,uint256)
-const DATA_UPLOADED_TOPIC = keccak256(toBytes("DataUploaded(string,string,uint256,string,uint256)"));
+const DATA_UPLOADED_TOPIC = keccak256(
+  toBytes("DataUploaded(string,string,uint256,string,uint256)")
+);
 
 async function main() {
-  console.log('DataUploaded event signature:', DATA_UPLOADED_TOPIC);
+  console.log("==============================================");
+  console.log("Configuration:");
+  console.log("==============================================");
+  console.log("CONTRACT_ADDRESS:", CONFIG.CONTRACT_ADDRESS);
+  console.log("FROM_BLOCK:", CONFIG.FROM_BLOCK);
+  console.log("CLICKHOUSE_URL:", CONFIG.CLICKHOUSE_URL);
+  console.log("CLICKHOUSE_USER:", CONFIG.CLICKHOUSE_USER);
+  console.log(
+    "CLICKHOUSE_PASSWORD:",
+    CONFIG.CLICKHOUSE_PASSWORD ? "***SET***" : "***NOT SET***"
+  );
+  console.log("==============================================");
+  console.log("DataUploaded event signature:", DATA_UPLOADED_TOPIC);
 
   const queryBuilder = new EvmQueryBuilder()
     .addFields({
@@ -55,11 +77,11 @@ async function main() {
               // Decode the event data (all fields are non-indexed)
               const decoded = decodeAbiParameters(
                 [
-                  { name: 'Id', type: 'string' },
-                  { name: 'description', type: 'string' },
-                  { name: 'priceUSDC', type: 'uint256' },
-                  { name: 'payAddress', type: 'string' },
-                  { name: 'timestamp', type: 'uint256' },
+                  { name: "Id", type: "string" },
+                  { name: "description", type: "string" },
+                  { name: "priceUSDC", type: "uint256" },
+                  { name: "payAddress", type: "string" },
+                  { name: "timestamp", type: "uint256" },
                 ],
                 log.data as `0x${string}`
               );
@@ -74,7 +96,7 @@ async function main() {
                 tx_hash: log.transactionHash,
               });
             } catch (e) {
-              console.error('Failed to decode event:', e);
+              console.error("Failed to decode event:", e);
             }
           }
         }
@@ -105,26 +127,26 @@ async function main() {
               ORDER BY (block_number, tx_hash, text_id)
             `,
           });
-          console.log('Table bahack_events created/verified');
+          console.log("Table bahack_events created/verified");
         },
         onData: async ({ data, store }) => {
           if (data.length > 0) {
             await store.insert({
-              table: 'bahack_events',
+              table: "bahack_events",
               values: data,
-              format: 'JSONEachRow',
+              format: "JSONEachRow",
             });
             console.log(`Inserted ${data.length} events`);
           }
         },
         onRollback: async ({ safeCursor, store }) => {
           await store.removeAllRows({
-            tables: ['bahack_events'],
+            tables: ["bahack_events"],
             where: `block_number > {latest:UInt64}`,
             params: { latest: safeCursor.number },
           });
         },
-      }),
+      })
     );
 }
 
