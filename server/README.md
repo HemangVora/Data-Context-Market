@@ -13,7 +13,8 @@
    NETWORK=base-sepolia
    ADDRESS=0xYourEthereumAddress
    
-   # Filecoin download endpoint (optional - not required for downloads)
+   # Filecoin endpoints
+   PRIVATE_KEY=your_private_key_here  # Required for /upload, optional for /download
    RPC_URL=https://api.calibration.node.glif.io/rpc/v1
    
    # required if using the Base mainnet facilitator
@@ -24,6 +25,7 @@
    **Important:** 
    - Replace `0xYourEthereumAddress` with your actual Ethereum address where you want to receive payments.
    - The `/download` endpoint doesn't require a private key - downloads are public.
+   - The `/upload` endpoint requires a valid `PRIVATE_KEY` for authentication.
 
 3. **Run the server:**
    ```bash
@@ -37,6 +39,10 @@
 - `GET /hello` - Free endpoint, returns `{"hello": "world"}`
 - `GET /weather` - Requires payment of $0.001 (USDC on base-sepolia)
 - `GET /premium/content` - Requires payment (custom token amount)
+- `POST /upload` - Stores a message to Filecoin and returns the PieceCID
+  - Body: `{ "message": "your message here" }`
+  - Returns: `{ "success": true, "pieceCid": "...", "size": 123 }`
+  - Example: `curl -X POST http://localhost:4021/upload -H "Content-Type: application/json" -d '{"message":"Hello, Filecoin!"}'`
 - `GET /download?pieceCid=<PieceCID>` - Downloads and returns content from Filecoin storage
   - Example: `GET /download?pieceCid=baga6ea4seaq...`
   - Returns JSON with the downloaded content (text or base64-encoded binary)
