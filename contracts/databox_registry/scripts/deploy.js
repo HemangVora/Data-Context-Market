@@ -2,7 +2,7 @@ const hre = require("hardhat");
 const fs = require("fs");
 
 async function main() {
-  console.log("Deploying BAHack contract to Base Sepolia...");
+  console.log("Deploying DataBoxRegistry contract...");
 
   // Get the deployer's address
   const [deployer] = await hre.ethers.getSigners();
@@ -12,18 +12,18 @@ async function main() {
   const balance = await hre.ethers.provider.getBalance(deployer.address);
   console.log("Account balance:", hre.ethers.formatEther(balance), "ETH");
 
-  // Deploy the BAHack contract
-  const BAHack = await hre.ethers.getContractFactory("BAHack");
-  const baHack = await BAHack.deploy();
+  // Deploy the DataBoxRegistry contract
+  const DataBoxRegistry = await hre.ethers.getContractFactory("DataBoxRegistry");
+  const dataBoxRegistry = await DataBoxRegistry.deploy();
 
-  await baHack.waitForDeployment();
+  await dataBoxRegistry.waitForDeployment();
 
-  const contractAddress = await baHack.getAddress();
-  console.log("BAHack contract deployed to:", contractAddress);
+  const contractAddress = await dataBoxRegistry.getAddress();
+  console.log("DataBoxRegistry contract deployed to:", contractAddress);
 
   // Wait for a few block confirmations
   console.log("Waiting for block confirmations...");
-  await baHack.deploymentTransaction().wait(5);
+  await dataBoxRegistry.deploymentTransaction().wait(5);
 
   console.log("\n==============================================");
   console.log("Deployment Summary:");

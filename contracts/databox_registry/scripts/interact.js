@@ -16,24 +16,24 @@ async function main() {
   const deploymentInfo = JSON.parse(fs.readFileSync(deploymentPath, "utf8"));
   const contractAddress = deploymentInfo.contractAddress;
 
-  console.log("Interacting with BAHack contract at:", contractAddress);
+  console.log("Interacting with DataBoxRegistry contract at:", contractAddress);
   console.log("Network:", hre.network.name);
   console.log("==============================================\n");
 
   // Get the contract
-  const BAHack = await hre.ethers.getContractFactory("BAHack");
-  const baHack = await BAHack.attach(contractAddress);
+  const DataBoxRegistry = await hre.ethers.getContractFactory("DataBoxRegistry");
+  const dataBoxRegistry = await DataBoxRegistry.attach(contractAddress);
 
   // Get the signer
   const [signer] = await hre.ethers.getSigners();
   console.log("Using account:", signer.address);
 
   try {
-    // Upload data
-    console.log("\nUploading data...");
-    const uploadTx = await baHack.upload(
-      "text123",
-      "Sample text description for indexing",
+    // Register upload
+    console.log("\nRegistering upload...");
+    const uploadTx = await dataBoxRegistry.register_upload(
+      "bafkzcibciacdwydlhwglaeicrliqxxywcbrrol63q3ybv55yw7edjylmqq5pumq",
+      "Sample data description for indexing",
       1000000, // 1 USDC (6 decimals)
       "0x1234567890123456789012345678901234567890"
     );
@@ -44,13 +44,13 @@ async function main() {
     console.log("Gas used:", uploadReceipt.gasUsed.toString());
 
     console.log("\n==============================================");
-    console.log("Data uploaded successfully!");
+    console.log("Data registered successfully!");
     console.log("==============================================");
     console.log("\nEvent details:");
-    console.log("- Text ID: text123");
-    console.log("- Description: Sample text description for indexing");
+    console.log("- PieceCID: bafkzcibciacdwydlhwglaeicrliqxxywcbrrol63q3ybv55yw7edjylmqq5pumq");
+    console.log("- Description: Sample data description for indexing");
     console.log("- Price: 1 USDC");
-    console.log("- Pay Address:", signer.address);
+    console.log("- Pay Address: 0x1234567890123456789012345678901234567890");
     console.log("\nThis event can now be indexed by SQD/SubQuery.");
   } catch (error) {
     console.error("\nError during interaction:", error.message);

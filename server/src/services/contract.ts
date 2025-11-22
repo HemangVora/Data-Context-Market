@@ -50,8 +50,8 @@ export async function registerUploadOnContract(
   console.log(`[CONTRACT]   - Contract: ${CONTRACT_ADDRESS} on Sepolia`);
 
   try {
-    // Call the upload function
-    const tx = await contract.upload(pieceCid, description, priceUSDCBigInt, payAddress);
+    // Call the register_upload function
+    const tx = await contract.register_upload(pieceCid, description, priceUSDCBigInt, payAddress);
     console.log(`[CONTRACT] Transaction sent: ${tx.hash}`);
     console.log(`[CONTRACT] Waiting for confirmation...`);
 

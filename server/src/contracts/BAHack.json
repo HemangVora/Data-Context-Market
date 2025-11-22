@@ -5,9 +5,9 @@
       "anonymous": false,
       "inputs": [
         {
-          "indexed": false,
+          "indexed": true,
           "internalType": "string",
-          "name": "Id",
+          "name": "pieceCid",
           "type": "string"
         },
         {
@@ -42,7 +42,94 @@
       "inputs": [
         {
           "internalType": "string",
-          "name": "_textId",
+          "name": "_pieceCid",
+          "type": "string"
+        }
+      ],
+      "name": "getData",
+      "outputs": [
+        {
+          "internalType": "string",
+          "name": "description",
+          "type": "string"
+        },
+        {
+          "internalType": "uint256",
+          "name": "priceUSDC",
+          "type": "uint256"
+        },
+        {
+          "internalType": "string",
+          "name": "payAddress",
+          "type": "string"
+        },
+        {
+          "internalType": "uint256",
+          "name": "timestamp",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "string",
+          "name": "_pieceCid",
+          "type": "string"
+        }
+      ],
+      "name": "isRegistered",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "string",
+          "name": "",
+          "type": "string"
+        }
+      ],
+      "name": "dataRegistry",
+      "outputs": [
+        {
+          "internalType": "string",
+          "name": "description",
+          "type": "string"
+        },
+        {
+          "internalType": "uint256",
+          "name": "priceUSDC",
+          "type": "uint256"
+        },
+        {
+          "internalType": "string",
+          "name": "payAddress",
+          "type": "string"
+        },
+        {
+          "internalType": "uint256",
+          "name": "timestamp",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "string",
+          "name": "_pieceCid",
           "type": "string"
         },
         {
@@ -61,11 +148,10 @@
           "type": "string"
         }
       ],
-      "name": "upload",
+      "name": "register_upload",
       "outputs": [],
       "stateMutability": "nonpayable",
       "type": "function"
     }
   ]
 }
-
