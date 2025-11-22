@@ -51,9 +51,10 @@ export async function getAllDatasetEvents(): Promise<DatasetEvent[]> {
     
     console.log(`[CLICKHOUSE] ✓ Fetched ${events.length} events from ClickHouse`);
     return events;
-  } catch (error: any) {
-    console.error(`[CLICKHOUSE] ✗ Error fetching events from ClickHouse:`, error);
-    throw new Error(`Failed to fetch events from ClickHouse: ${error.message || "Unknown error"}`);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    console.error(`[CLICKHOUSE] ✗ Error fetching events from ClickHouse:`, errorMessage);
+    throw new Error(`Failed to fetch events from ClickHouse: ${errorMessage}`);
   }
 }
 

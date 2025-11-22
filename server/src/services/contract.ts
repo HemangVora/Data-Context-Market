@@ -3,7 +3,7 @@ import { privateKey, sepoliaRpcUrl } from "../config.js";
 import contractArtifact from "../contracts/DataBoxRegistry.json";
 
 // Contract address on Sepolia
-const CONTRACT_ADDRESS = contractArtifact.address;
+export const CONTRACT_ADDRESS = contractArtifact.address;
 
 // Contract ABI
 const CONTRACT_ABI = contractArtifact.abi;
@@ -70,9 +70,10 @@ export async function registerUploadOnContract(
       txHash: tx.hash,
       blockNumber: receipt.blockNumber,
     };
-  } catch (error: any) {
-    console.error(`[CONTRACT] Error calling contract:`, error);
-    throw new Error(`Failed to register upload on contract: ${error.message || "Unknown error"}`);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    console.error(`[CONTRACT] Error calling contract:`, errorMessage);
+    throw new Error(`Failed to register upload on contract: ${errorMessage}`);
   }
 }
 
@@ -128,14 +129,15 @@ export async function getDataFromContract(
       filetype: data[4],
       timestamp: data[5],
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
     // If the error is "not found", return null
-    if (error.message?.includes("not found") || error.message?.includes("revert")) {
+    if (errorMessage.includes("not found") || errorMessage.includes("revert")) {
       console.log(`[CONTRACT] PieceCID not found in registry`);
       return null;
     }
-    console.error(`[CONTRACT] Error querying contract:`, error);
-    throw new Error(`Failed to get data from contract: ${error.message || "Unknown error"}`);
+    console.error(`[CONTRACT] Error querying contract:`, errorMessage);
+    throw new Error(`Failed to get data from contract: ${errorMessage}`);
   }
 }
 

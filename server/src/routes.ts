@@ -1,8 +1,18 @@
 import express from "express";
 import { downloadFromFilecoin, uploadToFilecoin, downloadFromUrl } from "./services/filecoin.js";
-import { registerUploadOnContract } from "./services/contract.js";
+import { registerUploadOnContract, CONTRACT_ADDRESS } from "./services/contract.js";
 import { getAllDatasetEvents } from "./services/clickhouse.js";
-import { compareTwoStrings, findBestMatch } from "string-similarity";
+import { compareTwoStrings } from "string-similarity";
+import { RequestWithContractData, DownloadResult, UploadRequestBody, ErrorResponse } from "./types.js";
+import {
+  validatePieceCid,
+  validatePayAddress,
+  validatePriceUSDC,
+  validateUrl,
+  validateNonEmptyString,
+  validateBase64,
+} from "./utils/validation.js";
+import { handleRouteError, createErrorResponse } from "./utils/errors.js";
 
 const router = express.Router();
 
@@ -13,101 +23,121 @@ router.get("/hello", (req, res) => {
   });
 });
 
+/**
+ * Helper function to add contract metadata to download result
+ */
+function addContractMetadataToResult(
+  result: DownloadResult,
+  contractData: RequestWithContractData["contractData"]
+): void {
+  if (contractData) {
+    result.name = contractData.name;
+    result.filetype = contractData.filetype;
+    // Set type: "message" if it's a message, otherwise use filetype
+    result.type =
+      result.format === "text" && !result.filename
+        ? "message"
+        : contractData.filetype || result.mimeType || "application/octet-stream";
+  } else {
+    // Fallback: use filetype from result if available
+    result.type =
+      result.format === "text" && !result.filename
+        ? "message"
+        : result.mimeType || "application/octet-stream";
+  }
+}
+
 // Filecoin endpoints
 // Download endpoint - supports both /download?pieceCid=... and /download/:pieceCid
-router.get("/download", async (req, res) => {
+router.get("/download", async (req: RequestWithContractData, res) => {
+  // Check if response was already sent by middleware (e.g., 402 Payment Required)
+  if (res.headersSent) {
+    console.log(`[ROUTE] Response already sent by middleware, skipping route handler`);
+    return;
+  }
+
   console.log(`[ROUTE] /download route handler called`);
   console.log(`[ROUTE] Request path: ${req.path}, query:`, req.query, `params:`, req.params);
-  
+
   try {
     // Support both query parameter and path parameter
-    const pieceCid = ((req.params as any).pieceCid as string) || (req.query.pieceCid as string);
+    const pieceCid = (req.params.pieceCid as string) || (req.query.pieceCid as string);
     console.log(`[ROUTE] Extracted pieceCid: ${pieceCid}`);
 
     if (!pieceCid) {
       console.log(`[ROUTE] ✗ Missing pieceCid parameter`);
-      return res.status(400).json({
-        error: "Missing pieceCid parameter",
-        usage: [
-          "GET /download?pieceCid=<PieceCID>",
-          "GET /download/<PieceCID>",
-        ],
-        example: [
-          "GET /download?pieceCid=baga6ea4seaq...",
-          "GET /download/baga6ea4seaq...",
-        ],
-      });
+      return res.status(400).json(
+        createErrorResponse("Missing pieceCid parameter", "pieceCid is required", {
+          usage: ["GET /download?pieceCid=<PieceCID>", "GET /download/<PieceCID>"],
+          example: ["GET /download?pieceCid=baga6ea4seaq...", "GET /download/baga6ea4seaq..."],
+        })
+      );
     }
+
+    // Validate PieceCID format
+    validatePieceCid(pieceCid);
 
     console.log(`[ROUTE] Starting download for PieceCID: ${pieceCid}`);
     const result = await downloadFromFilecoin(pieceCid);
-    
+
     // Add contract metadata (name and filetype) if available from middleware
-    const contractData = (req as any).contractData;
-    if (contractData) {
-      result.name = contractData.name;
-      result.filetype = contractData.filetype;
-      // Set type: "message" if it's a message, otherwise use filetype
-      result.type = result.format === "text" && !result.filename ? "message" : (contractData.filetype || result.mimeType || "application/octet-stream");
-    } else {
-      // Fallback: use filetype from result if available
-      result.type = result.format === "text" && !result.filename ? "message" : (result.mimeType || "application/octet-stream");
-    }
-    
+    addContractMetadataToResult(result, req.contractData);
+
     console.log(`[ROUTE] ✓ Successfully downloaded ${result.size} bytes (format: ${result.format}, type: ${result.type})`);
     return res.json(result);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error(`[ROUTE] ✗ Download error:`, error);
-    console.error(`[ROUTE] Error stack:`, error.stack);
-    return res.status(500).json({
-      error: "Download failed",
-      message: error.message || "Unknown error occurred",
-    });
+    // Only send response if headers haven't been sent yet
+    if (!res.headersSent) {
+      const { status, response } = handleRouteError(error, "Download failed");
+      return res.status(status).json(response);
+    }
   }
 });
 
 // Also support path parameter format: /download/:pieceCid
-router.get("/download/:pieceCid", async (req, res) => {
+router.get("/download/:pieceCid", async (req: RequestWithContractData, res) => {
+  // Check if response was already sent by middleware (e.g., 402 Payment Required)
+  if (res.headersSent) {
+    console.log(`[ROUTE] Response already sent by middleware, skipping route handler`);
+    return;
+  }
+
   console.log(`[ROUTE] /download/:pieceCid route handler called`);
   console.log(`[ROUTE] Request path: ${req.path}, params:`, req.params);
-  
+
   try {
     const pieceCid = req.params.pieceCid as string;
     console.log(`[ROUTE] Extracted pieceCid from params: ${pieceCid}`);
 
     if (!pieceCid) {
       console.log(`[ROUTE] ✗ Missing pieceCid parameter`);
-      return res.status(400).json({
-        error: "Missing pieceCid parameter",
-        usage: "GET /download/<PieceCID>",
-        example: "GET /download/baga6ea4seaq...",
-      });
+      return res.status(400).json(
+        createErrorResponse("Missing pieceCid parameter", "pieceCid is required", {
+          usage: "GET /download/<PieceCID>",
+          example: "GET /download/baga6ea4seaq...",
+        })
+      );
     }
+
+    // Validate PieceCID format
+    validatePieceCid(pieceCid);
 
     console.log(`[ROUTE] Starting download for PieceCID: ${pieceCid}`);
     const result = await downloadFromFilecoin(pieceCid);
-    
+
     // Add contract metadata (name and filetype) if available from middleware
-    const contractData = (req as any).contractData;
-    if (contractData) {
-      result.name = contractData.name;
-      result.filetype = contractData.filetype;
-      // Set type: "message" if it's a message, otherwise use filetype
-      result.type = result.format === "text" && !result.filename ? "message" : (contractData.filetype || result.mimeType || "application/octet-stream");
-    } else {
-      // Fallback: use filetype from result if available
-      result.type = result.format === "text" && !result.filename ? "message" : (result.mimeType || "application/octet-stream");
-    }
-    
+    addContractMetadataToResult(result, req.contractData);
+
     console.log(`[ROUTE] ✓ Successfully downloaded ${result.size} bytes (format: ${result.format}, type: ${result.type})`);
     return res.json(result);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error(`[ROUTE] ✗ Download error:`, error);
-    console.error(`[ROUTE] Error stack:`, error.stack);
-    return res.status(500).json({
-      error: "Download failed",
-      message: error.message || "Unknown error occurred",
-    });
+    // Only send response if headers haven't been sent yet
+    if (!res.headersSent) {
+      const { status, response } = handleRouteError(error, "Download failed");
+      return res.status(status).json(response);
+    }
   }
 });
 
@@ -117,23 +147,24 @@ router.get("/download_test", async (req, res) => {
     const pieceCid = req.query.pieceCid as string;
 
     if (!pieceCid) {
-      return res.status(400).json({
-        error: "Missing pieceCid parameter",
+      return res.status(400).json(
+        createErrorResponse("Missing pieceCid parameter", "pieceCid is required", {
         usage: "GET /download_test?pieceCid=<PieceCID>",
         example: "GET /download_test?pieceCid=baga6ea4seaq...",
-      });
+        })
+      );
     }
+
+    validatePieceCid(pieceCid);
 
     console.log(`[DOWNLOAD_TEST] Starting download for PieceCID: ${pieceCid}`);
     const result = await downloadFromFilecoin(pieceCid);
     console.log(`[DOWNLOAD_TEST] Successfully downloaded ${result.size} bytes (format: ${result.format})`);
     return res.json(result);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Download test error:", error);
-    return res.status(500).json({
-      error: "Download failed",
-      message: error.message || "Unknown error occurred",
-    });
+    const { status, response } = handleRouteError(error, "Download failed");
+    return res.status(status).json(response);
   }
 });
 
@@ -178,51 +209,63 @@ function deduceFiletype(mimeType?: string, filename?: string): string {
 
 router.post("/upload", async (req, res) => {
   try {
-    const { message, file, filename, mimeType, url, description, priceUSDC, payAddress, name } = req.body;
+    const body = req.body as UploadRequestBody;
 
-    // Validate required payment metadata fields
-    if (!name) {
-      return res.status(400).json({
-        error: "Missing required field: name",
-        message: "name is required to identify the file/data",
-      });
-    }
-    if (!description) {
-      return res.status(400).json({
-        error: "Missing required field: description",
-        message: "description is required to describe what the file is",
-      });
-    }
-    if (priceUSDC === undefined || priceUSDC === null) {
-      return res.status(400).json({
-        error: "Missing required field: priceUSDC",
-        message: "priceUSDC is required (price in USDC with 6 decimals, e.g., 1000000 for 1 USDC)",
-      });
-    }
-    if (!payAddress) {
-      return res.status(400).json({
-        error: "Missing required field: payAddress",
-        message: "payAddress is required (address to receive payments, 0x... for EVM or Solana address)",
-      });
+    // Validate required fields
+    try {
+      validateNonEmptyString(body.name, "name");
+      validateNonEmptyString(body.description, "description");
+      validatePriceUSDC(body.priceUSDC);
+      validatePayAddress(body.payAddress);
+    } catch (validationError: unknown) {
+      const errorMessage = validationError instanceof Error ? validationError.message : "Validation error";
+      return res.status(400).json(createErrorResponse("Validation error", errorMessage));
     }
 
-    if (!message && !file && !url) {
-      return res.status(400).json({
-        error: "Missing message, file, or url in request body",
-        usage: "POST /upload with JSON body: { \"message\": \"text\" } OR { \"file\": \"base64\", \"filename\": \"file.pdf\", \"mimeType\": \"application/pdf\" } OR { \"url\": \"https://example.com/file.pdf\" }",
-        requiredFields: {
-          name: "Name of the file/data (required)",
-          description: "Description of what the file is (required)",
-          priceUSDC: "Price in USDC (6 decimals, e.g., 1000000 for 1 USDC) (required)",
-          payAddress: "Address to receive payments (0x... or Solana address) (required)",
-        },
+    // Validate that at least one content source is provided
+    if (!body.message && !body.file && !body.url) {
+      return res.status(400).json(
+        createErrorResponse("Missing content", "Either message, file, or url must be provided", {
+          usage: "POST /upload with JSON body: { \"message\": \"text\" } OR { \"file\": \"base64\", \"filename\": \"file.pdf\", \"mimeType\": \"application/pdf\" } OR { \"url\": \"https://example.com/file.pdf\" }",
+          requiredFields: {
+            name: "Name of the file/data (required)",
+            description: "Description of what the file is (required)",
+            priceUSDC: "Price in USDC (6 decimals, e.g., 1000000 for 1 USDC) (required)",
+            payAddress: "Address to receive payments (0x... or Solana address) (required)",
+          },
         examples: [
-          { message: "Hello, Filecoin!", name: "greeting", description: "A greeting message", priceUSDC: "1000000", payAddress: "0x1234..." },
-          { file: "JVBERi0xLjQK...", filename: "document.pdf", mimeType: "application/pdf", name: "document", description: "Important document", priceUSDC: "2000000", payAddress: "0x1234..." },
-          { url: "https://example.com/document.pdf", name: "research-paper", description: "Research paper", priceUSDC: "5000000", payAddress: "0x1234..." },
-        ],
-      });
+            { message: "Hello, Filecoin!", name: "greeting", description: "A greeting message", priceUSDC: "1000000", payAddress: "0x1234..." },
+            { file: "JVBERi0xLjQK...", filename: "document.pdf", mimeType: "application/pdf", name: "document", description: "Important document", priceUSDC: "2000000", payAddress: "0x1234..." },
+            { url: "https://example.com/document.pdf", name: "research-paper", description: "Research paper", priceUSDC: "5000000", payAddress: "0x1234..." },
+          ],
+        })
+      );
     }
+
+    // Validate URL if provided
+    if (body.url) {
+      try {
+        validateUrl(body.url);
+      } catch (validationError: unknown) {
+        const errorMessage = validationError instanceof Error ? validationError.message : "Invalid URL";
+        return res.status(400).json(createErrorResponse("Validation error", errorMessage));
+      }
+    }
+
+    // Validate base64 file if provided
+    if (body.file) {
+      if (!body.filename) {
+        return res.status(400).json(createErrorResponse("Missing filename", "filename is required when uploading a file"));
+      }
+      try {
+        validateBase64(body.file);
+      } catch (validationError: unknown) {
+        const errorMessage = validationError instanceof Error ? validationError.message : "Invalid base64";
+        return res.status(400).json(createErrorResponse("Validation error", errorMessage));
+      }
+    }
+
+    const { message, file, filename, mimeType, url, description, priceUSDC, payAddress, name } = body;
 
     let pieceCid: string;
     let size: number;
@@ -274,13 +317,7 @@ router.post("/upload", async (req, res) => {
       uploadType = "url";
       console.log(`[UPLOAD] Step 2 complete: Successfully uploaded to Filecoin - PieceCID: ${pieceCid}, Size: ${size} bytes`);
     } else if (file) {
-      // File upload (base64 encoded)
-      if (!filename) {
-        return res.status(400).json({
-          error: "filename is required when uploading a file",
-        });
-      }
-
+      // File upload (base64 encoded) - filename already validated above
       const fileBytes = Buffer.from(file, "base64");
       const fileSize = fileBytes.length;
       console.log(`[UPLOAD] Starting upload for file: ${filename} (${fileSize} bytes, ${mimeType || "unknown type"})`);
@@ -298,6 +335,9 @@ router.post("/upload", async (req, res) => {
       console.log(`[UPLOAD] Successfully uploaded file to Filecoin - PieceCID: ${pieceCid}, Size: ${size} bytes`);
     } else {
       // Text message upload
+      if (!message) {
+        return res.status(400).json(createErrorResponse("Missing message", "message is required for text upload"));
+      }
       const messageSize = new TextEncoder().encode(message).length;
       console.log(`[UPLOAD] Starting upload for message (${messageSize} bytes)`);
       
@@ -324,15 +364,28 @@ router.post("/upload", async (req, res) => {
       );
       dataRegistryTxHash = contractResult.txHash;
       dataRegistryBlockNumber = contractResult.blockNumber;
-      console.log(`[UPLOAD] Successfully registered on contract: ${dataRegistryTxHash}`);
-    } catch (error: any) {
-      console.error(`[UPLOAD] Failed to register on contract:`, error);
+      console.log(`[UPLOAD] Successfully registered on contract ${CONTRACT_ADDRESS}`);
+      console.log(`[UPLOAD] Transaction hash: ${dataRegistryTxHash}`);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      console.error(`[UPLOAD] Failed to register on contract:`, errorMessage);
       // Don't fail the entire upload if contract registration fails
       // The file is already on Filecoin, so we log the error but continue
     }
 
     // Set type: "message" for messages, otherwise use filetype
     const responseType = uploadType === "message" ? "message" : finalFiletype;
+    
+    console.log(`[UPLOAD] ========================================`);
+    console.log(`[UPLOAD] ✓ Upload completed successfully!`);
+    console.log(`[UPLOAD]   - PieceCID: ${pieceCid}`);
+    console.log(`[UPLOAD]   - Name: ${finalName}`);
+    console.log(`[UPLOAD]   - Size: ${size} bytes`);
+    if (dataRegistryTxHash) {
+      console.log(`[UPLOAD]   - Contract: ${CONTRACT_ADDRESS}`);
+      console.log(`[UPLOAD]   - Transaction: ${dataRegistryTxHash}`);
+    }
+    console.log(`[UPLOAD] ========================================`);
     
     return res.json({
       success: true,
@@ -354,27 +407,24 @@ router.post("/upload", async (req, res) => {
         ? `File "${finalFilename}" stored successfully on Filecoin`
         : "Message stored successfully on Filecoin",
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Upload error:", error);
-    
-    if (error.message?.includes("PRIVATE_KEY")) {
-      return res.status(500).json({
-        error: "PRIVATE_KEY not configured",
-        message: "Uploads require a valid PRIVATE_KEY. Please set it in your environment variables.",
-      });
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+
+    if (errorMessage.includes("PRIVATE_KEY")) {
+      return res.status(500).json(
+        createErrorResponse("PRIVATE_KEY not configured", "Uploads require a valid PRIVATE_KEY. Please set it in your environment variables.")
+      );
     }
 
-    if (error.message?.includes("Failed to download from URL")) {
-      return res.status(500).json({
-        error: "URL download failed",
-        message: error.message || "Could not download file from the provided URL",
-      });
+    if (errorMessage.includes("Failed to download from URL")) {
+      return res.status(500).json(
+        createErrorResponse("URL download failed", errorMessage || "Could not download file from the provided URL")
+      );
     }
 
-    return res.status(500).json({
-      error: "Upload failed",
-      message: error.message || "Unknown error occurred",
-    });
+    const { status, response } = handleRouteError(error, "Upload failed");
+    return res.status(status).json(response);
   }
 });
 
@@ -392,6 +442,7 @@ router.get("/discover_all", async (req, res) => {
       description: event.description,
       price: event.price_usdc,
       filetype: event.filetype,
+      payAddress: event.pay_address,
     }));
     
     console.log(`[DISCOVER_ALL] ✓ Returning ${results.length} results`);
@@ -401,12 +452,10 @@ router.get("/discover_all", async (req, res) => {
       count: results.length,
       results: results,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error(`[DISCOVER_ALL] ✗ Error in discover_all endpoint:`, error);
-    return res.status(500).json({
-      error: "Discover all failed",
-      message: error.message || "Unknown error occurred",
-    });
+    const { status, response } = handleRouteError(error, "Discover all failed");
+    return res.status(status).json(response);
   }
 });
 
@@ -415,13 +464,13 @@ router.get("/discover_query", async (req, res) => {
   try {
     const query = req.query.q as string | undefined;
     
-    if (!query) {
-      return res.status(400).json({
-        error: "Missing required parameter: q",
-        message: "Query parameter 'q' is required",
-        usage: "GET /discover_query?q=search+term",
-        example: "GET /discover_query?q=financial+data",
-      });
+    if (!query || query.trim().length === 0) {
+      return res.status(400).json(
+        createErrorResponse("Missing required parameter: q", "Query parameter 'q' is required", {
+          usage: "GET /discover_query?q=search+term",
+          example: "GET /discover_query?q=financial+data",
+        })
+      );
     }
     
     console.log(`[DISCOVER_QUERY] Query request received: "${query}"`);
@@ -519,11 +568,11 @@ router.get("/discover_query", async (req, res) => {
     
     if (scoredEvents.length === 0) {
       console.log(`[DISCOVER_QUERY] ✗ No matching dataset found for query: "${query}"`);
-      return res.status(404).json({
-        error: "No matching dataset found",
-        query: query,
-        message: `No dataset found matching the query "${query}"`,
-      });
+      return res.status(404).json(
+        createErrorResponse("No matching dataset found", `No dataset found matching the query "${query}"`, {
+          query: query,
+        })
+      );
     }
     
     // Sort by score (highest first) and get the best match
@@ -538,6 +587,7 @@ router.get("/discover_query", async (req, res) => {
       description: bestMatch.event.description,
       price: bestMatch.event.price_usdc,
       filetype: bestMatch.event.filetype,
+      payAddress: bestMatch.event.pay_address,
     };
     
     console.log(`[DISCOVER_QUERY] ✓ Found matching dataset: ${result.name} (${result.pieceCid})`);
@@ -547,12 +597,10 @@ router.get("/discover_query", async (req, res) => {
       query: query,
       result: result,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error(`[DISCOVER_QUERY] ✗ Error in discover_query endpoint:`, error);
-    return res.status(500).json({
-      error: "Discover query failed",
-      message: error.message || "Unknown error occurred",
-    });
+    const { status, response } = handleRouteError(error, "Discover query failed");
+    return res.status(status).json(response);
   }
 });
 

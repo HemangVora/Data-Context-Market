@@ -2,13 +2,15 @@ import express, { Request, Response, NextFunction } from "express";
 import { paymentMiddleware, Resource, type SolanaAddress } from "x402-express";
 import { facilitatorUrl } from "./config.js";
 import { getDataFromContract } from "./services/contract.js";
+import { RequestWithContractData } from "./types.js";
+import { createErrorResponse } from "./utils/errors.js";
 
 /**
  * Dynamic pricing middleware for /download endpoint
  * Fetches file size first, then applies x402 payment middleware with calculated price
  */
 async function dynamicPricingMiddleware(
-  req: Request,
+  req: RequestWithContractData,
   res: Response,
   next: NextFunction,
 ): Promise<void> {
@@ -77,8 +79,8 @@ async function dynamicPricingMiddleware(
     console.log(`[DYNAMIC_PRICING]   - Pay Address from contract: ${contractPayAddress}`);
     
     // Store in request for potential use
-    (req as any).dynamicPrice = dynamicPrice;
-    (req as any).contractData = contractData;
+    req.dynamicPrice = dynamicPrice;
+    req.contractData = contractData;
 
     // Use payAddress from contract
     const finalPayTo = contractPayAddress;
@@ -112,29 +114,80 @@ async function dynamicPricingMiddleware(
     const hasPaymentHeader = req.headers['x-payment'] ? 'present' : 'missing';
     console.log(`[DYNAMIC_PRICING]   - X-PAYMENT header: ${hasPaymentHeader}`);
     
-    await dynamicPaymentMiddleware(req, res, next);
+    // Create a controlled next function that tracks when payment is verified
+    // The x402 middleware will ONLY call next() after payment verification succeeds
+    // If payment fails, the middleware sends a 402 and returns without calling next()
+    let paymentVerified = false;
+    const controlledNext: NextFunction = () => {
+      // If this function is called, it means the x402 middleware verified payment
+      // and is allowing the request to proceed to the route handler
+      paymentVerified = true;
+      console.log(`[DYNAMIC_PRICING] ✓ Payment verified by x402 middleware - calling route handler`);
+      next();
+    };
     
-    // Log the response status after middleware completes
-    if (res.headersSent) {
-      if (res.statusCode === 402) {
-        console.log(`[DYNAMIC_PRICING] ⚠ Payment required (402) - X-PAYMENT header missing or invalid`);
-      } else if (res.statusCode === 200) {
-        console.log(`[DYNAMIC_PRICING] ✓ Payment verified successfully (200)`);
+    try {
+      // Execute the x402 payment middleware
+      // This will:
+      // 1. Check for X-PAYMENT header
+      // 2. If missing/invalid: send 402 and return (doesn't call next())
+      // 3. If valid: verify payment, then call next() to proceed to route handler
+      await dynamicPaymentMiddleware(req, res, controlledNext);
+      
+      // After middleware completes, check what happened
+      if (res.headersSent) {
+        // A response was sent - check if it was a 402 (payment required)
+        if (res.statusCode === 402) {
+          console.log(`[DYNAMIC_PRICING] ⚠ Payment required (402) - request blocked`);
+          console.log(`[DYNAMIC_PRICING] ========================================`);
+          // Payment middleware sent 402, request is blocked - don't proceed
+          return;
+        }
+        // If status is 200 and paymentVerified is true, route handler should have executed
+        if (res.statusCode === 200 && paymentVerified) {
+          console.log(`[DYNAMIC_PRICING] ✓ Payment verified (200) - route handler executed`);
+        } else {
+          console.log(`[DYNAMIC_PRICING] Unexpected state: status=${res.statusCode}, verified=${paymentVerified}`);
+        }
+        // If headers were sent but payment wasn't verified, stop here
+        if (!paymentVerified) {
+          console.log(`[DYNAMIC_PRICING] ⚠ Response sent but payment not verified - blocking request`);
+          console.log(`[DYNAMIC_PRICING] ========================================`);
+          return;
+        }
+      } else if (!paymentVerified) {
+        // No response sent and payment not verified - this shouldn't happen
+        // The x402 middleware should have either verified payment (calling next) or sent 402
+        console.log(`[DYNAMIC_PRICING] ⚠ WARNING: Payment middleware completed but payment not verified and no response sent`);
+        console.log(`[DYNAMIC_PRICING] This should not happen - blocking request as safety measure`);
+        console.log(`[DYNAMIC_PRICING] ========================================`);
+        if (!res.headersSent) {
+          res.status(500).json(createErrorResponse("Payment verification error", "Payment middleware did not verify payment or send response"));
+        }
+        return;
       } else {
-        console.log(`[DYNAMIC_PRICING] Response status: ${res.statusCode}`);
+        // Payment verified but no response sent yet - route handler will send response
+        console.log(`[DYNAMIC_PRICING] ✓ Payment verified - route handler will send response`);
       }
-    } else {
-      console.log(`[DYNAMIC_PRICING] Response not sent yet (middleware passed to next handler)`);
+    } catch (middlewareError: unknown) {
+      // If the payment middleware itself throws an error
+      const errorMessage = middlewareError instanceof Error ? middlewareError.message : "Unknown error";
+      console.error(`[DYNAMIC_PRICING] Error in payment middleware execution:`, errorMessage);
+      if (!res.headersSent) {
+        res.status(500).json(createErrorResponse("Payment middleware error", errorMessage));
+      }
+      console.log(`[DYNAMIC_PRICING] ========================================`);
+      // Stop execution - don't continue to route handler
+      return;
     }
     console.log(`[DYNAMIC_PRICING] ========================================`);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error(`[DYNAMIC_PRICING] Error in dynamic pricing middleware:`, error);
-    console.error(`[DYNAMIC_PRICING] Error stack:`, error.stack);
+    const errorMessage = error instanceof Error ? error.message : "Could not fetch file metadata";
     // If we can't get file size, fall back to a default price or error
-    res.status(500).json({
-      error: "Failed to calculate price",
-      message: error.message || "Could not fetch file metadata",
-    });
+    if (!res.headersSent) {
+      res.status(500).json(createErrorResponse("Failed to calculate price", errorMessage));
+    }
   }
 }
 

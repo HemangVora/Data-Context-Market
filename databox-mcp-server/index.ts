@@ -7,10 +7,14 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import axios, { AxiosError } from "axios";
 import { config } from "dotenv";
-import { Hex } from "viem";
+import { Hex, createWalletClient, http, publicActions } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import { baseSepolia } from "viem/chains";
 import { withPaymentInterceptor } from "x402-axios";
 import { z } from "zod";
+import { readFile } from "fs/promises";
+import { existsSync } from "fs";
+import path from "path";
 
 config();
 
@@ -21,6 +25,7 @@ interface UploadPayload {
   filename?: string;
   mimeType?: string;
   url?: string;
+  filePath?: string; // Local file path
   name: string;
   description: string;
   priceUSDC: string;
@@ -53,6 +58,7 @@ interface DiscoverResponse {
     description: string;
     price: string; // USDC amount as string
     filetype: string;
+    payAddress: string;
   };
 }
 
@@ -103,6 +109,14 @@ function validatePayAddress(address: string): void {
     throw new Error("payAddress is required and cannot be empty");
   }
   
+  // Check for zero address (burn address) - x402 struggles with this
+  const zeroAddress = "0x0000000000000000000000000000000000000000";
+  if (address.toLowerCase() === zeroAddress.toLowerCase()) {
+    throw new Error(
+      "payAddress cannot be the zero address (0x0000...0000). The zero address is not supported for x402 payments. Please provide a valid payment address."
+    );
+  }
+  
   // EVM address: 0x followed by 40 hex characters
   const evmPattern = /^0x[a-fA-F0-9]{40}$/i;
   // Solana address: base58, typically 32-44 characters
@@ -125,6 +139,44 @@ function validateBase64(base64String: string): void {
   const base64Pattern = /^[A-Za-z0-9+/]*={0,2}$/;
   if (!base64Pattern.test(base64String)) {
     throw new Error("Invalid base64 format. File data must be valid base64-encoded");
+  }
+}
+
+/**
+ * Reads a file from the local filesystem and returns it as base64
+ */
+async function readLocalFile(filePath: string): Promise<{ data: string; filename: string }> {
+  // Resolve the path (handles relative paths, ~, etc.)
+  const resolvedPath = path.resolve(filePath);
+  
+  // Check if file exists
+  if (!existsSync(resolvedPath)) {
+    throw new Error(`File not found: ${filePath} (resolved to: ${resolvedPath})`);
+  }
+  
+  try {
+    // Read file as buffer
+    const fileBuffer = await readFile(resolvedPath);
+    
+    // Convert to base64
+    const base64Data = fileBuffer.toString("base64");
+    
+    // Extract filename from path
+    const filename = path.basename(resolvedPath);
+    
+    return {
+      data: base64Data,
+      filename,
+    };
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    if (errorMessage.includes("EACCES") || errorMessage.includes("permission")) {
+      throw new Error(`Permission denied: Cannot read file at ${filePath}`);
+    }
+    if (errorMessage.includes("EISDIR")) {
+      throw new Error(`Path is a directory, not a file: ${filePath}`);
+    }
+    throw new Error(`Failed to read file at ${filePath}: ${errorMessage}`);
   }
 }
 
@@ -178,16 +230,25 @@ const baseURL = process.env.RESOURCE_SERVER_URL || "https://ba-hack-production.u
 
 const account = privateKeyToAccount(privateKey);
 
+// Create wallet client with chain configuration for x402 payments
+// x402-axios requires a wallet client with chain info, not just an account
+const walletClient = createWalletClient({
+  account,
+  transport: http(),
+  chain: baseSepolia, // base-sepolia network for x402 payments
+}).extend(publicActions);
+
 // Axios client with payment interceptor and timeout configuration
+// Cast walletClient to any to work around type compatibility issues with x402-axios
 const client = withPaymentInterceptor(
   axios.create({
     baseURL,
-    timeout: 60000, // 60 second timeout
+    timeout: 180000, // 3 minute timeout (180 seconds)
     headers: {
       "Content-Type": "application/json",
     },
   }),
-  account
+  walletClient as any
 );
 
 /**
@@ -201,7 +262,8 @@ function formatPriceUSD(priceUSDC: string | number): string {
   if (isNaN(priceNum) || priceNum < 0) {
     return "$0.00";
   }
-  // Convert from 6 decimals to USD
+  // Convert from 6 decimals (microUSDC) to USD
+  // Example: 8500 microUSDC = 0.0085 USD, 1000000 microUSDC = 1.00 USD
   const priceInUSD = priceNum / 1_000_000;
   // Format to 2 decimal places, but show more if needed (e.g., $0.000001)
   const decimals = priceInUSD < 0.01 ? 6 : 2;
@@ -259,13 +321,14 @@ server.tool(
 // Add tool to upload content to Filecoin
 server.tool(
   "upload-to-filecoin",
-  "Upload a message, file, or URL to Filecoin storage. Returns the PieceCID that can be used to download the content later. For files, provide base64-encoded data. For URLs, provide a publicly accessible URL and the server will download, encrypt, and upload the file automatically. The filetype will be automatically deduced from the mimeType or filename. IMPORTANT: You MUST ask the user for the required fields (name, description, priceUSD, payAddress) - do NOT infer or guess these values. Always prompt the user explicitly for each required field before calling this tool. The priceUSD will be automatically converted to the correct format internally.",
+  "Upload a message, file, URL, or local file path to Filecoin storage. Returns the PieceCID that can be used to download the content later. For files, provide base64-encoded data OR a local file path. For URLs, provide a publicly accessible URL and the server will download, encrypt, and upload the file automatically. The filetype will be automatically deduced from the mimeType or filename. IMPORTANT: You MUST ask the user for the required fields (name, description, priceUSD, payAddress) - do NOT infer or guess these values. Always prompt the user explicitly for each required field before calling this tool. The priceUSD will be automatically converted to the correct format internally.",
   {
     message: z.string().optional().describe("Text message to upload to Filecoin"),
     file: z.string().optional().describe("Base64-encoded file data to upload"),
-    filename: z.string().optional().describe("Filename (required when uploading a file via base64)"),
+    filename: z.string().optional().describe("Filename (required when uploading a file via base64, optional when using filePath)"),
     mimeType: z.string().optional().describe("MIME type of the file (e.g., 'application/pdf', 'image/png'). If not provided, will be deduced from filename extension."),
     url: z.string().url().optional().describe("URL of a publicly accessible file to download and upload to Filecoin. The server will automatically detect filename and MIME type from the URL or response headers."),
+    filePath: z.string().optional().describe("Local file path to read and upload (e.g., '/Users/name/file.pdf' or './data.csv'). The file will be read from the local filesystem and uploaded. Relative paths are resolved from the current working directory."),
     name: z.string().describe("REQUIRED: Name of the file/data. You MUST ask the user for this value - do not infer it. Ask: 'What name should this file/data have?'"),
     description: z.string().describe("REQUIRED: Description of what the file/data is. You MUST ask the user for this value - do not infer it. Ask: 'What is a description of this file/data?'"),
     priceUSD: z.union([z.string(), z.number()]).describe("REQUIRED: Price in USD as a decimal number (e.g., 0.01 for $0.01, 1.5 for $1.50, or '0.01' as string). You can also accept formats like '$0.01'. You MUST ask the user for this value - do not infer or guess. Ask: 'What price in USD should this be? (e.g., 0.01 for $0.01)'"),
@@ -277,13 +340,14 @@ server.tool(
     filename?: string; 
     mimeType?: string; 
     url?: string;
+    filePath?: string;
     name: string;
     description: string;
     priceUSD: string | number;
     payAddress: string;
   }) => {
     try {
-      const { message, file, filename, mimeType, url, name, description, priceUSD, payAddress } = args;
+      const { message, file, filename, mimeType, url, filePath, name, description, priceUSD, payAddress } = args;
       
       // Validate inputs (Zod already validates required fields, but we add format validation)
       if (name.trim().length === 0) {
@@ -323,16 +387,37 @@ server.tool(
         throw new Error(`Invalid price format: ${priceUSD}. ${errorMessage}`);
       }
       
-      if (!message && !file && !url) {
-        throw new Error("Either message, file, or url parameter is required");
+      // Validate that exactly one content source is provided
+      const contentSources = [message, file, url, filePath].filter(Boolean);
+      if (contentSources.length === 0) {
+        throw new Error("Either message, file, url, or filePath parameter is required");
+      }
+      if (contentSources.length > 1) {
+        throw new Error("Only one of message, file, url, or filePath can be provided at a time");
       }
 
-      if (file) {
-        if (!filename) {
-        throw new Error("filename is required when uploading a file via base64");
+      // Handle local file path
+      let finalFile: string | undefined = file;
+      let finalFilename: string | undefined = filename;
+      
+      if (filePath) {
+        try {
+          const { data, filename: pathFilename } = await readLocalFile(filePath);
+          finalFile = data;
+          // Use filename from path if not provided, otherwise use provided filename
+          finalFilename = filename || pathFilename;
+        } catch (error: unknown) {
+          const errorMessage = error instanceof Error ? error.message : "Unknown error";
+          throw new Error(`Failed to read local file: ${errorMessage}`);
+        }
+      }
+
+      if (finalFile) {
+        if (!finalFilename) {
+          throw new Error("filename is required when uploading a file (either provide filename parameter or use filePath which will extract filename from path)");
         }
         // Validate base64 format
-        validateBase64(file);
+        validateBase64(finalFile);
       }
 
       const payload: UploadPayload = {
@@ -344,9 +429,9 @@ server.tool(
       if (message) {
         payload.message = message.trim();
       }
-      if (file) {
-        payload.file = file;
-        payload.filename = filename!;
+      if (finalFile) {
+        payload.file = finalFile;
+        payload.filename = finalFilename!;
         if (mimeType) {
           payload.mimeType = mimeType.trim();
         }
@@ -465,7 +550,17 @@ server.tool(
       });
       
       // Format price for display (convert USDC to readable USD)
-      const formattedPrice = formatPriceUSD(discoveredDataset.price);
+      // Ensure price is treated as string/number for formatPriceUSD
+      const priceValue = typeof discoveredDataset.price === "string" 
+        ? discoveredDataset.price 
+        : String(discoveredDataset.price);
+      const formattedPrice = formatPriceUSD(priceValue);
+      
+      // Format any price fields in the download response as well
+      const formattedDownloadData: DownloadResponse & { priceUSD?: string } = { ...downloadRes.data };
+      if (formattedDownloadData.priceUSDC && typeof formattedDownloadData.priceUSDC === "string") {
+        formattedDownloadData.priceUSD = formatPriceUSD(formattedDownloadData.priceUSDC);
+      }
       
       return {
         content: [
@@ -481,9 +576,10 @@ server.tool(
                   description: discoveredDataset.description,
                   price: formattedPrice, // Always display in readable USD format
                   filetype: discoveredDataset.filetype,
+                  payAddress: discoveredDataset.payAddress,
                 },
               },
-              download: downloadRes.data,
+              download: formattedDownloadData,
             }, null, 2),
           },
         ],
