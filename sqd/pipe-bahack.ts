@@ -74,10 +74,10 @@ async function main() {
         for (const block of data.blocks) {
           for (const log of block.logs) {
             try {
-              // Decode the event data (all fields are non-indexed)
+              // pieceCid is indexed (topic[1]), but indexed strings are hashed
+              // So we decode only the non-indexed parameters from data
               const decoded = decodeAbiParameters(
                 [
-                  { name: "Id", type: "string" },
                   { name: "description", type: "string" },
                   { name: "priceUSDC", type: "uint256" },
                   { name: "payAddress", type: "string" },
@@ -86,17 +86,22 @@ async function main() {
                 log.data as `0x${string}`
               );
 
+              // The indexed pieceCid is in topics[1], but it's hashed
+              // We'll use the topic hash as an identifier
+              const pieceCidHash = log.topics[1] || "unknown";
+
               events.push({
                 block_number: block.header.number,
                 timestamp: block.header.timestamp,
-                text_id: decoded[0] as string,
-                description: decoded[1] as string,
-                price_usdc: (decoded[2] as bigint).toString(),
-                pay_address: decoded[3] as string,
+                text_id: pieceCidHash,
+                description: decoded[0] as string,
+                price_usdc: (decoded[1] as bigint).toString(),
+                pay_address: decoded[2] as string,
                 tx_hash: log.transactionHash,
               });
             } catch (e) {
               console.error("Failed to decode event:", e);
+              console.error("Log data:", log);
             }
           }
         }
