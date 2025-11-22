@@ -87,13 +87,15 @@ export function useX402Payment() {
         const paymentOption = paymentInfo.accepts[0];
         console.log("[X402] Payment option:", paymentOption);
 
-        if (!paymentOption.to || !paymentOption.value) {
+        if (!paymentOption.payTo || !paymentOption.maxAmountRequired) {
           throw new Error("Invalid payment option from server");
         }
 
         // Extract payment details from the accepts array
-        const to = paymentOption.to;
-        const value = paymentOption.value;
+        const to = paymentOption.payTo;
+        const value = paymentOption.maxAmountRequired;
+        const asset = paymentOption.asset; // USDC token address
+
         // Map network name to chainId
         const networkToChainId: Record<string, number> = {
           "base-sepolia": 84532,
@@ -106,6 +108,7 @@ export function useX402Payment() {
         console.log("[X402] Payment details:", {
           to,
           value,
+          asset,
           chainId,
           from: evmAddress,
         });
@@ -123,13 +126,44 @@ export function useX402Payment() {
         });
 
         // Step 4: Send the payment transaction
-        console.log("[X402] Sending payment transaction...");
-        const txHash = await walletClient.sendTransaction({
-          account: evmAddress as `0x${string}`,
-          to: to as `0x${string}`,
-          value: BigInt(value),
-          chain: baseSepolia,
-        });
+        let txHash: string;
+
+        if (asset) {
+          // ERC20 token payment (USDC)
+          console.log("[X402] Sending USDC token payment...");
+
+          // ERC20 transfer function ABI
+          const erc20Abi = [
+            {
+              name: "transfer",
+              type: "function",
+              stateMutability: "nonpayable",
+              inputs: [
+                { name: "to", type: "address" },
+                { name: "amount", type: "uint256" },
+              ],
+              outputs: [{ name: "", type: "bool" }],
+            },
+          ] as const;
+
+          txHash = await walletClient.writeContract({
+            account: evmAddress as `0x${string}`,
+            address: asset as `0x${string}`,
+            abi: erc20Abi,
+            functionName: "transfer",
+            args: [to as `0x${string}`, BigInt(value)],
+            chain: baseSepolia,
+          });
+        } else {
+          // Native token payment (ETH)
+          console.log("[X402] Sending native token payment...");
+          txHash = await walletClient.sendTransaction({
+            account: evmAddress as `0x${string}`,
+            to: to as `0x${string}`,
+            value: BigInt(value),
+            chain: baseSepolia,
+          });
+        }
 
         console.log("[X402] Payment transaction sent:", txHash);
 
