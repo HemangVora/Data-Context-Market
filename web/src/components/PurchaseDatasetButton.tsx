@@ -87,11 +87,11 @@ export function PurchaseDatasetButton({
   return (
     <SendEvmTransactionButton
       account={evmAddress}
-      network="base-sepolia" // Change to "base-mainnet" for production
+      network="base-sepolia" // Base Sepolia testnet for x402
       transaction={{
         to: toAddress,
         value: priceInWei,
-        chainId: 84532, // Base Sepolia (use 8453 for Base mainnet)
+        chainId: 84532, // Base Sepolia
         type: "eip1559",
       }}
       onSuccess={(hash) => {

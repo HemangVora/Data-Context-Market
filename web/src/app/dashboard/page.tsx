@@ -1,3 +1,5 @@
+"use client";
+
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
 import { FileUpload } from "@/components/FileUpload";
@@ -22,12 +24,7 @@ export default function DashboardPage() {
 
           {/* Upload Section */}
           <div className="mb-16">
-            <FileUpload
-              onUploadSuccess={() => {
-                // Refresh will happen automatically due to the 30s interval
-                // or we could trigger a manual refresh
-              }}
-            />
+            <FileUpload />
           </div>
 
           {/* User's Datasets */}
