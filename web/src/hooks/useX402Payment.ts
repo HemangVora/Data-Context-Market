@@ -170,11 +170,15 @@ export function useX402Payment() {
 
         console.log("[X402] Payment transaction sent:", txHash);
 
-        // Step 5: Create payment proof header
-        // The x402 protocol expects a base64-encoded JSON object with network name, not chainId
+        // Step 5: Create payment proof header in x402 protocol format
+        // The x402 protocol expects a specific structure with x402Version, scheme, and payload
         const paymentProofData = {
-          transactionHash: txHash,
-          network: network, // Use network name (e.g., "base-sepolia") not chainId
+          x402Version: 1,
+          scheme: "exact",
+          payload: {
+            transactionHash: txHash,
+            network: network, // Use network name (e.g., "base-sepolia") not chainId
+          },
         };
         const paymentProofJson = JSON.stringify(paymentProofData);
         const paymentProof = btoa(paymentProofJson); // Base64 encode
