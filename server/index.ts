@@ -70,6 +70,8 @@ app.get("/hello", (req, res) => {
   });
 });
 
-app.listen(4021, () => {
-  console.log(`Server listening at http://localhost:${4021}`);
+const port = process.env.PORT || 4021;
+
+app.listen(port, () => {
+  console.log(`Server listening at http://localhost:${port}`);
 });
