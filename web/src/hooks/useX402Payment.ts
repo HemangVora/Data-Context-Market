@@ -1,16 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useEvmAddress } from "@coinbase/cdp-hooks";
-import { createWalletClient, custom, http, type WalletClient } from "viem";
-import { baseSepolia } from "viem/chains";
-
-// Extend Window interface for ethereum provider
-declare global {
-  interface Window {
-    ethereum?: any;
-  }
-}
+import { useEvmAddress, useSendEvmTransaction } from "@coinbase/cdp-hooks";
+import { encodeFunctionData } from "viem";
 
 export interface PaymentRequiredResponse {
   paymentRequest: {
@@ -39,6 +31,7 @@ export interface DownloadResult {
  */
 export function useX402Payment() {
   const { evmAddress } = useEvmAddress();
+  const { sendEvmTransaction } = useSendEvmTransaction();
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -70,52 +63,122 @@ export function useX402Payment() {
         const paymentInfo = await initialResponse.json();
         console.log("[X402] Payment info:", paymentInfo);
 
-        if (!paymentInfo.paymentRequest) {
-          throw new Error("Invalid payment request from server");
+        // x402-express returns an 'accepts' array with payment options
+        if (
+          !paymentInfo.accepts ||
+          !Array.isArray(paymentInfo.accepts) ||
+          paymentInfo.accepts.length === 0
+        ) {
+          throw new Error("No payment options available from server");
         }
 
         if (!evmAddress) {
           throw new Error("Wallet not connected");
         }
 
-        // Get the payment request details
-        const { to, value, chainId } = paymentInfo.paymentRequest;
+        // Get the first payment option (should be EVM native payment)
+        const paymentOption = paymentInfo.accepts[0];
+        console.log("[X402] Payment option:", paymentOption);
+
+        if (!paymentOption.payTo || !paymentOption.maxAmountRequired) {
+          throw new Error("Invalid payment option from server");
+        }
+
+        // Extract payment details from the accepts array
+        const to = paymentOption.payTo;
+        const value = paymentOption.maxAmountRequired;
+        const asset = paymentOption.asset; // USDC token address
+
+        // Map network name to chainId
+        const networkToChainId: Record<string, number> = {
+          "base-sepolia": 84532,
+          base: 8453,
+          ethereum: 1,
+          sepolia: 11155111,
+        };
+        const chainId = networkToChainId[paymentOption.network] || 84532;
 
         console.log("[X402] Payment details:", {
           to,
           value,
+          asset,
           chainId,
           from: evmAddress,
         });
 
-        // Step 3: Create wallet client using window.ethereum
-        const ethereum = (window as any).ethereum;
-        if (!ethereum) {
-          throw new Error("Ethereum provider not found");
+        // Step 3: Send the payment transaction using CDP SDK
+        let txHash: string;
+
+        if (asset) {
+          // ERC20 token payment (USDC)
+          console.log("[X402] Sending USDC token payment...");
+
+          // ERC20 transfer function ABI
+          const erc20Abi = [
+            {
+              name: "transfer",
+              type: "function",
+              stateMutability: "nonpayable",
+              inputs: [
+                { name: "to", type: "address" },
+                { name: "amount", type: "uint256" },
+              ],
+              outputs: [{ name: "", type: "bool" }],
+            },
+          ] as const;
+
+          // Encode the transfer function call
+          const data = encodeFunctionData({
+            abi: erc20Abi,
+            functionName: "transfer",
+            args: [to as `0x${string}`, BigInt(value)],
+          });
+
+          // Send the transaction using CDP SDK
+          const result = await sendEvmTransaction({
+            transaction: {
+              to: asset,
+              data: data,
+              value: BigInt(0), // No ETH value for ERC20 transfer
+              chainId: chainId,
+              type: "eip1559",
+            },
+            evmAccount: evmAddress as `0x${string}`,
+            network: "base-sepolia",
+          });
+
+          txHash = result.transactionHash;
+        } else {
+          // Native token payment (ETH)
+          console.log("[X402] Sending native token payment...");
+
+          const result = await sendEvmTransaction({
+            transaction: {
+              to: to,
+              value: BigInt(value),
+              chainId: chainId,
+              type: "eip1559",
+            },
+            evmAccount: evmAddress as `0x${string}`,
+            network: "base-sepolia",
+          });
+
+          txHash = result.transactionHash;
         }
-
-        const walletClient = createWalletClient({
-          account: evmAddress as `0x${string}`,
-          chain: baseSepolia,
-          transport: custom(ethereum),
-        });
-
-        // Step 4: Send the payment transaction
-        console.log("[X402] Sending payment transaction...");
-        const txHash = await walletClient.sendTransaction({
-          account: evmAddress as `0x${string}`,
-          to: to as `0x${string}`,
-          value: BigInt(value),
-          chain: baseSepolia,
-        });
 
         console.log("[X402] Payment transaction sent:", txHash);
 
         // Step 5: Create payment proof header
-        // Format: txHash:chainId
-        const paymentProof = `${txHash}:${chainId}`;
+        // The x402 protocol expects a base64-encoded JSON object
+        const paymentProofData = {
+          transactionHash: txHash,
+          chainId: chainId,
+        };
+        const paymentProofJson = JSON.stringify(paymentProofData);
+        const paymentProof = btoa(paymentProofJson); // Base64 encode
 
-        console.log("[X402] Payment proof created:", paymentProof);
+        console.log("[X402] Payment proof created:", paymentProofData);
+        console.log("[X402] Payment proof (base64):", paymentProof);
 
         // Step 6: Retry download with X-PAYMENT header
         console.log("[X402] Retrying download with payment proof...");

@@ -1,6 +1,7 @@
 import { ExternalLink, HardDrive, Tag } from "lucide-react";
 import { PurchaseDatasetButton } from "./PurchaseDatasetButton";
 import { DownloadDatasetButton } from "./DownloadDatasetButton";
+import { type DownloadResult } from "@/hooks/useX402Payment";
 
 interface DatasetCardProps {
   title: string;
@@ -26,11 +27,12 @@ export function DatasetCard({
   payAddress,
   pieceCid,
 }: DatasetCardProps) {
-  const handlePurchaseSuccess = (purchaseTxHash: string) => {
+  const handlePurchaseSuccess = (result: DownloadResult) => {
     console.log("Dataset purchased successfully!", {
       dataset: title,
-      txHash: purchaseTxHash,
-      pieceCid,
+      pieceCid: result.pieceCid,
+      size: result.size,
+      format: result.format,
     });
     // Here you could:
     // - Show a success toast

@@ -364,7 +364,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "generate_pipe",
         description:
-          "Generate a Subsquid pipe for indexing blockchain events. Fetches ABI from Etherscan and creates pipe code. Use get_contract_events first to see available events.",
+          "Generate a Subsquid pipe for indexing blockchain events. Fetches ABI from Etherscan and creates pipe code. Use get_contract_events first to see available events. IMPORTANT: Always display the COMPLETE file paths returned by this tool to the user - do not shorten or abbreviate paths.",
         inputSchema: {
           type: "object",
           properties: {
@@ -413,7 +413,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: "run_pipe",
-        description: "Run a generated pipe script",
+        description: "Run a generated pipe script. IMPORTANT: Always display the COMPLETE file paths (CSV path, URL) returned by this tool to the user - do not shorten or abbreviate paths.",
         inputSchema: {
           type: "object",
           properties: {
@@ -544,12 +544,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         fs.writeFileSync(outputPath, code);
 
         const eventList = events.map((e) => e.name).join(", ");
+        const outputDir = path.join(__dirname, 'output');
+        const csvPath = path.join(outputDir, `${tableName}.csv`);
+        const csvUrl = `file://${csvPath}`;
 
         return {
           content: [
             {
               type: "text",
-              text: `Successfully generated pipe at ${outputPath}\n\nEvents indexed: ${eventList}\n\nTo run: use run_pipe tool with pipeFile="${outputFile}"`,
+              text: `Successfully generated pipe at ${outputPath}\n\nEvents indexed: ${eventList}\n\nOutput will be saved to:\n- CSV: ${csvPath}\n- URL: ${csvUrl}\n- ClickHouse table: ${tableName}\n\nTo run: use run_pipe tool with pipeFile="${outputFile}"`,
             },
           ],
         };
@@ -623,11 +626,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         // Wait a bit for initial output
         await new Promise((resolve) => setTimeout(resolve, 2000));
 
+        // Extract table name from pipe file to show output path
+        const pipeContent = fs.readFileSync(pipePath, 'utf-8');
+        const tableMatch = pipeContent.match(/TABLE_NAME:\s*['"]([^'"]+)['"]/);
+        const tableName = tableMatch ? tableMatch[1] : pipeFile.replace('.ts', '');
+        const outputDir = path.join(__dirname, 'output');
+        const csvPath = path.join(outputDir, `${tableName}.csv`);
+        const csvUrl = `file://${csvPath}`;
+
         return {
           content: [
             {
               type: "text",
-              text: `Started pipe ${pipeFile} (PID: ${child.pid})\n\nClickHouse container started automatically.\n\nInitial output:\n${output || "(waiting for output...)"}`,
+              text: `Started pipe ${pipeFile} (PID: ${child.pid})\n\nClickHouse container started automatically.\n\nOutput files:\n- CSV: ${csvPath}\n- URL: ${csvUrl}\n- ClickHouse table: ${tableName}\n\nInitial output:\n${output || "(waiting for output...)"}`,
             },
           ],
         };
