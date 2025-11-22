@@ -1,5 +1,5 @@
 import express from "express";
-import { downloadFromFilecoin, uploadToFilecoin } from "../services/filecoin.js";
+import { downloadFromFilecoin, uploadToFilecoin } from "./services/filecoin.js";
 
 const router = express.Router();
 
@@ -7,22 +7,6 @@ const router = express.Router();
 router.get("/hello", (req, res) => {
   res.json({
     hello: "world",
-  });
-});
-
-// Paid endpoints (protected by payment middleware)
-router.get("/weather", (req, res) => {
-  res.send({
-    report: {
-      weather: "rainy",
-      temperature: 420,
-    },
-  });
-});
-
-router.get("/premium/content", (req, res) => {
-  res.send({
-    content: "This is premium content",
   });
 });
 
@@ -39,7 +23,9 @@ router.get("/download", async (req, res) => {
       });
     }
 
+    console.log(`[DOWNLOAD] Starting download for PieceCID: ${pieceCid}`);
     const result = await downloadFromFilecoin(pieceCid);
+    console.log(`[DOWNLOAD] Successfully downloaded ${result.size} bytes (format: ${result.format})`);
     return res.json(result);
   } catch (error: any) {
     console.error("Download error:", error);
@@ -62,7 +48,10 @@ router.post("/upload", async (req, res) => {
       });
     }
 
+    const messageSize = new TextEncoder().encode(message).length;
+    console.log(`[UPLOAD] Starting upload for message (${messageSize} bytes)`);
     const { pieceCid, size } = await uploadToFilecoin(message);
+    console.log(`[UPLOAD] Successfully uploaded to Filecoin - PieceCID: ${pieceCid}, Size: ${size} bytes`);
 
     return res.json({
       success: true,

@@ -1,6 +1,6 @@
 import express from "express";
 import { setupPaymentMiddleware } from "./middleware.js";
-import routes from "./routes/index.js";
+import routes from "./routes.js";
 import { port } from "./config.js";
 
 const app = express();
