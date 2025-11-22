@@ -1,4 +1,4 @@
-import { Download, HardDrive, Tag } from "lucide-react";
+import { ExternalLink, HardDrive, Tag } from "lucide-react";
 
 interface DatasetCardProps {
   title: string;
@@ -8,6 +8,7 @@ interface DatasetCardProps {
   size: string;
   author: string;
   tags: string[];
+  txHash?: string;
 }
 
 export function DatasetCard({
@@ -17,6 +18,7 @@ export function DatasetCard({
   format,
   size,
   tags,
+  txHash,
 }: DatasetCardProps) {
   return (
     <div className="group relative flex flex-col justify-between p-6 rounded-2xl border border-white/5 bg-white/[0.02] hover:bg-white/[0.04] hover:border-white/10 transition-all duration-300">
@@ -27,7 +29,7 @@ export function DatasetCard({
             {format}
           </div>
           <div className="flex items-center gap-1 text-emerald-400/80 font-mono text-sm">
-            <span className="text-lg font-semibold">{price}</span> ETH
+            <span className="text-lg font-semibold">{price}</span> USDC
           </div>
         </div>
 
@@ -52,9 +54,18 @@ export function DatasetCard({
           </div>
         </div>
 
-        <button className="p-2 rounded-full bg-white/5 hover:bg-indigo-500/20 hover:text-indigo-300 text-neutral-400 transition-colors">
-          <Download className="w-4 h-4" />
-        </button>
+        {txHash && (
+          <a
+            href={`https://sepolia.etherscan.io/tx/${txHash}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 hover:bg-indigo-500/20 hover:text-indigo-300 text-neutral-400 transition-colors text-xs font-mono"
+            title="View transaction on Etherscan"
+          >
+            <ExternalLink className="w-3.5 h-3.5" />
+            <span>View TX</span>
+          </a>
+        )}
       </div>
     </div>
   );

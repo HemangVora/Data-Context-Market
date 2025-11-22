@@ -2,42 +2,67 @@
 
 import { DatasetCard } from "./DatasetCard";
 import { Search, SlidersHorizontal } from "lucide-react";
+import { useEffect, useState } from "react";
 
-const DATASETS = [
-  // ... (Keep your existing data array here)
-  {
-    title: "Global Financial Markets 2024",
-    description:
-      "Comprehensive tick-by-tick data for major global indices including S&P 500. Perfect for HFT training.",
-    price: "0.5",
-    format: "CSV",
-    size: "2.4 TB",
-    author: "0x1234...5678",
-    tags: ["Finance", "Stocks"],
-  },
-  {
-    title: "Autonomous Driving: Urban Scenes",
-    description:
-      "Lidar and Camera sensor fusion data from diverse urban environments in varying weather.",
-    price: "2.0",
-    format: "ROS",
-    size: "5 TB",
-    author: "0x9876...5432",
-    tags: ["Robotics", "Vision"],
-  },
-  {
-    title: "Climate Change: Satellite Imagery",
-    description:
-      "High-resolution satellite imagery of polar ice caps and rainforests over the last decade.",
-    price: "0.15",
-    format: "TIFF",
-    size: "600 GB",
-    author: "0x5555...6666",
-    tags: ["Climate", "Geo"],
-  },
-];
+interface DatasetEvent {
+  block_number: number;
+  timestamp: number;
+  text_id: string;
+  description: string;
+  price_usdc: string;
+  pay_address: string;
+  tx_hash: string;
+}
 
 export function Marketplace() {
+  const [datasets, setDatasets] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [eventCount, setEventCount] = useState(0);
+
+  useEffect(() => {
+    const fetchEvents = async () => {
+      try {
+        setLoading(true);
+        const response = await fetch("/api/events");
+        const data = await response.json();
+
+        if (data.success) {
+          setEventCount(data.count);
+          // Transform events to dataset card format
+          const transformedDatasets = data.events.map(
+            (event: DatasetEvent, index: number) => ({
+              title: `Dataset #${data.count - index}`, // Demo name - will be replaced with contract name field
+              description: event.description,
+              price: (parseInt(event.price_usdc) / 1_000_000).toFixed(2), // Convert USDC (6 decimals) to readable format
+              format: "Blockchain",
+              size: "On-chain",
+              author: `${event.pay_address.slice(
+                0,
+                6
+              )}...${event.pay_address.slice(-4)}`,
+              tags: ["Dataset", "Verified"],
+              txHash: event.tx_hash,
+            })
+          );
+          setDatasets(transformedDatasets);
+        } else {
+          setError(data.error || "Failed to fetch datasets");
+        }
+      } catch (err) {
+        setError("Failed to connect to marketplace");
+        console.error("Error fetching events:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchEvents();
+    // Refresh every 30 seconds
+    const interval = setInterval(fetchEvents, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
   return (
     <section id="marketplace" className="py-32 relative bg-black">
       <div className="container mx-auto px-6 relative z-10">
@@ -47,8 +72,18 @@ export function Marketplace() {
             Marketplace
           </h2>
           <p className="text-neutral-400 max-w-lg mb-10">
-            Discover high-quality, verifiable datasets tailored for AI training.
+            Real-time indexed events from the blockchain via SQD
           </p>
+
+          {/* Event Count Badge */}
+          {!loading && (
+            <div className="mb-6 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+              <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+              <span className="text-sm font-mono text-emerald-400">
+                {eventCount} {eventCount === 1 ? "event" : "events"} found
+              </span>
+            </div>
+          )}
 
           {/* Floating Glass Search Bar */}
           <div className="w-full max-w-2xl relative group">
@@ -74,9 +109,34 @@ export function Marketplace() {
 
         {/* Grid */}
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {DATASETS.map((dataset, index) => (
-            <DatasetCard key={index} {...dataset} />
-          ))}
+          {loading ? (
+            // Loading skeletons
+            <>
+              {[1, 2, 3].map((i) => (
+                <div
+                  key={i}
+                  className="p-6 rounded-2xl border border-white/5 bg-white/[0.02] animate-pulse"
+                >
+                  <div className="h-6 bg-white/5 rounded w-20 mb-4"></div>
+                  <div className="h-6 bg-white/5 rounded w-3/4 mb-2"></div>
+                  <div className="h-4 bg-white/5 rounded w-full mb-6"></div>
+                  <div className="h-4 bg-white/5 rounded w-1/2"></div>
+                </div>
+              ))}
+            </>
+          ) : error ? (
+            <div className="col-span-full text-center py-12">
+              <p className="text-red-400">{error}</p>
+            </div>
+          ) : datasets.length === 0 ? (
+            <div className="col-span-full text-center py-12">
+              <p className="text-neutral-400">No datasets available yet</p>
+            </div>
+          ) : (
+            datasets.map((dataset, index) => (
+              <DatasetCard key={index} {...dataset} />
+            ))
+          )}
         </div>
       </div>
     </section>
