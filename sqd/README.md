@@ -1,40 +1,84 @@
-# SQD Pipes
+# SQD Blockchain Indexer
 
-## Setup
+Indexes `DataUploaded` events from the BAHack smart contract into ClickHouse database.
+
+## 🚀 Quick Start
+
+### Local Development (Docker)
 
 ```bash
+# Start ClickHouse
 docker-compose up -d
+
+# Run indexer
+npm start
 ```
+
+### Railway Deployment (Production)
+
+See [RAILWAY_DEPLOY.md](./RAILWAY_DEPLOY.md) for complete deployment guide.
+
+**Quick Deploy:**
+
+1. Deploy ClickHouse on Railway
+2. Push code to GitHub
+3. Create new Railway service from GitHub repo
+4. Set root directory to `sqd`
+5. Add environment variables (see below)
 
 ## Run Indexers
 
-### MultiLogger Indexer
+### BAHack Indexer (Primary)
+
 ```bash
-npx ts-node pipe-multi.ts
+npm start
 ```
 
-### BAHack Indexer
+### MultiLogger Indexer (Example)
+
 ```bash
-npx ts-node pipe-bahack.ts
+npm run multi
 ```
 
-## Query
+## Environment Variables
 
-### MultiLogger Events
-```bash
-docker exec clickhouse clickhouse-client --password password \
-  -q "SELECT block_number, event_type, sender, amount, value2 as balance FROM multi_logger_events"
+Create a `.env` file (see `.env.example`):
+
+```env
+# Smart Contract
+CONTRACT_ADDRESS=0x5b0b1cbF40C910f58B8Ff1d48A629f257a556B99
+FROM_BLOCK=9680000
+
+# SQD Portal
+PORTAL_URL=https://portal.sqd.dev/datasets/ethereum-sepolia
+
+# ClickHouse (Railway or Local)
+CLICKHOUSE_URL=https://your-clickhouse.railway.app
+CLICKHOUSE_USER=default
+CLICKHOUSE_PASSWORD=your_password
 ```
 
-### BAHack Events
+## Query Events
+
+### Local ClickHouse (Docker)
+
 ```bash
 docker exec clickhouse clickhouse-client --password password \
   -q "SELECT * FROM bahack_events"
 ```
 
+### Railway ClickHouse
+
+```bash
+curl -X POST "https://your-clickhouse.railway.app" \
+  --user "default:your_password" \
+  -d "SELECT * FROM bahack_events FORMAT JSONEachRow"
+```
+
 ## Interact with Contracts
 
 ### MultiLogger (0xd892de662E18237dfBD080177Ba8cEc4bC6689E7)
+
 ```bash
 cast send 0xd892de662E18237dfBD080177Ba8cEc4bC6689E7 "increment()" --rpc-url $RPC_URL --private-key $PRIVATE_KEY
 
@@ -44,6 +88,7 @@ cast send 0xd892de662E18237dfBD080177Ba8cEc4bC6689E7 'log(string)' 'Hello SQD!' 
 ```
 
 ### BAHack (0x5b0b1cbF40C910f58B8Ff1d48A629f257a556B99)
+
 ```bash
 cast send 0x5b0b1cbF40C910f58B8Ff1d48A629f257a556B99 "upload(string,string,uint256,string)" "id1" "description" 1000000 "0xPayAddress" --rpc-url $RPC_URL --private-key $PRIVATE_KEY
 ```

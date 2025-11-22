@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "pipes-generator": {
+      "command": "npx",
+      "args": [
+        "tsx",
+        "/Users/tanguyvans/Desktop/hackathon/19_ethba/BA-hack/sqd/mcp-server.ts"
+      ],
+      "env": {
+        "ETHERSCAN_API_KEY": "B8HWU3J9TFZ9HRGZ3V7UWIA3P1VN9XGC9H",
+        "CLICKHOUSE_URL": "http://localhost:8123",
+        "CLICKHOUSE_USER": "default",
+        "CLICKHOUSE_PASSWORD": "password"
+      }
+    }
+  }
+}
