@@ -1,6 +1,14 @@
 {
+  "name": "sqd",
+  "scripts": {
+    "start": "ts-node pipe-multi.ts"
+  },
   "dependencies": {
     "@clickhouse/client": "^1.14.0",
     "@subsquid/pipes": "^0.1.0-beta.6"
+  },
+  "devDependencies": {
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
   }
 }

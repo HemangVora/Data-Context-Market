@@ -2,7 +2,11 @@
 pragma solidity ^0.8.13;
 
 contract SimpleLogger {
-    event MessageLogged(address indexed sender, string message, uint256 timestamp);
+    event MessageLogged(
+        address indexed sender,
+        string message,
+        uint256 timestamp
+    );
     event CounterIncremented(address indexed sender, uint256 newValue);
 
     uint256 public counter;

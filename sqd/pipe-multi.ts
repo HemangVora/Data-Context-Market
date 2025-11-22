@@ -4,10 +4,10 @@ import { clickhouseTarget } from '@subsquid/pipes/targets/clickhouse';
 
 // Configuration - modify these values for your deployment
 const CONFIG = {
-  // Base Sepolia deployment
-  CONTRACT_ADDRESS: process.env.CONTRACT_ADDRESS || "0x2221f8B0c6Ae88Fa374af7E07425C52FeBe1Ac6C",
-  FROM_BLOCK: parseInt(process.env.FROM_BLOCK || "34003825"),
-  PORTAL_URL: process.env.PORTAL_URL || "https://portal.sqd.dev/datasets/base-sepolia",
+  // Ethereum Sepolia deployment
+  CONTRACT_ADDRESS: process.env.CONTRACT_ADDRESS || "0xd892de662E18237dfBD080177Ba8cEc4bC6689E7",
+  FROM_BLOCK: parseInt(process.env.FROM_BLOCK || "9679658"),
+  PORTAL_URL: process.env.PORTAL_URL || "https://portal.sqd.dev/datasets/ethereum-sepolia",
 
   // ClickHouse
   CLICKHOUSE_URL: process.env.CLICKHOUSE_URL || "http://localhost:8123",
@@ -55,23 +55,55 @@ async function main() {
           block_number: number;
           timestamp: number;
           event_type: string;
-          topic0: string;
-          topic1: string;
-          topic2: string;
-          data: string;
+          sender: string;
+          recipient: string;
+          amount: string;
+          value1: string;
+          value2: string;
           tx_hash: string;
         }> = [];
 
         for (const block of data.blocks) {
           for (const log of block.logs) {
+            const eventType = getEventType(log.topics[0]);
+            const sender = log.topics[1] ? '0x' + log.topics[1].slice(26) : '';
+            const recipient = log.topics[2] ? '0x' + log.topics[2].slice(26) : '';
+
+            // Decode data based on event type
+            let amount = '0';
+            let value1 = '0';
+            let value2 = '0';
+
+            if (log.data && log.data.length > 2) {
+              // First 32 bytes (64 hex chars after 0x)
+              if (log.data.length >= 66) {
+                value1 = BigInt('0x' + log.data.slice(2, 66)).toString();
+              }
+              // Second 32 bytes
+              if (log.data.length >= 130) {
+                value2 = BigInt('0x' + log.data.slice(66, 130)).toString();
+              }
+            }
+
+            // Map values based on event type
+            if (eventType === 'CounterIncremented') {
+              amount = value1; // newValue
+            } else if (eventType === 'Deposit' || eventType === 'Withdrawal') {
+              amount = value1; // amount
+              // value2 is balance
+            } else if (eventType === 'Transfer') {
+              amount = value1; // amount
+            }
+
             events.push({
               block_number: block.header.number,
               timestamp: block.header.timestamp,
-              event_type: getEventType(log.topics[0]),
-              topic0: log.topics[0] || '',
-              topic1: log.topics[1] || '',
-              topic2: log.topics[2] || '',
-              data: log.data,
+              event_type: eventType,
+              sender,
+              recipient,
+              amount,
+              value1,
+              value2,
               tx_hash: log.transactionHash,
             });
           }
@@ -94,10 +126,11 @@ async function main() {
                 block_number  UInt64,
                 timestamp     UInt64,
                 event_type    String,
-                topic0        String,
-                topic1        String,
-                topic2        String,
-                data          String,
+                sender        String,
+                recipient     String,
+                amount        String,
+                value1        String,
+                value2        String,
                 tx_hash       String
               )
               ENGINE = ReplacingMergeTree()

@@ -3,7 +3,11 @@ pragma solidity ^0.8.13;
 
 contract MultiLogger {
     // Different event types for various actions
-    event MessageLogged(address indexed sender, string message, uint256 timestamp);
+    event MessageLogged(
+        address indexed sender,
+        string message,
+        uint256 timestamp
+    );
     event CounterIncremented(address indexed sender, uint256 newValue);
     event Transfer(address indexed from, address indexed to, uint256 amount);
     event Deposit(address indexed user, uint256 amount, uint256 balance);
