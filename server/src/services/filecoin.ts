@@ -85,8 +85,10 @@ async function getSynapse(requirePrivateKey: boolean = false): Promise<Synapse> 
 export async function downloadFromFilecoin(pieceCid: string): Promise<{
   pieceCid: string;
   size: number;
-  format: "text" | "binary";
+  format: "text" | "binary" | "file";
   content: string;
+  filename?: string;
+  mimeType?: string;
   message?: string;
 }> {
   const synapse = await getSynapse(false);
@@ -118,6 +120,39 @@ export async function downloadFromFilecoin(pieceCid: string): Promise<{
     trimmedBytes = bytes.slice(0, lastNonZero + 1);
   }
 
+  // Check if there's metadata header (JSON at the start)
+  try {
+    const textDecoder = new TextDecoder();
+    const firstChars = textDecoder.decode(trimmedBytes.slice(0, Math.min(100, trimmedBytes.length)));
+    
+    if (firstChars.startsWith("{")) {
+      // Try to parse as JSON metadata
+      const jsonEnd = firstChars.indexOf("}");
+      if (jsonEnd > 0) {
+        const metadataStr = firstChars.slice(0, jsonEnd + 1);
+        const metadata = JSON.parse(metadataStr);
+        
+        if (metadata.type === "file" && metadata.filename) {
+          // It's a file, extract the file data
+          const metadataBytes = new TextEncoder().encode(metadataStr);
+          const fileData = trimmedBytes.slice(metadataBytes.length);
+          const base64Content = Buffer.from(fileData).toString("base64");
+          
+          return {
+            pieceCid,
+            size: fileData.length,
+            format: "file",
+            content: base64Content,
+            filename: metadata.filename,
+            mimeType: metadata.mimeType || "application/octet-stream",
+          };
+        }
+      }
+    }
+  } catch (error) {
+    // Not JSON metadata, continue with text/binary detection
+  }
+
   // Try to decode as text
   try {
     const decodedText = new TextDecoder().decode(trimmedBytes);
@@ -140,15 +175,107 @@ export async function downloadFromFilecoin(pieceCid: string): Promise<{
   }
 }
 
-export async function uploadToFilecoin(message: string): Promise<{
+/**
+ * Gets the file size from Filecoin without returning the content.
+ * This is used for pricing calculation before payment.
+ */
+export async function getFileSizeFromFilecoin(pieceCid: string): Promise<number> {
+  console.log(`[FILE_SIZE] Starting file size fetch for PieceCID: ${pieceCid}`);
+  const synapse = await getSynapse(false);
+  
+  console.log(`[FILE_SIZE] Downloading encrypted bytes from Filecoin...`);
+  const encryptedBytes = await synapse.storage.download(pieceCid);
+  console.log(`[FILE_SIZE] Encrypted bytes downloaded: ${encryptedBytes.length} bytes`);
+
+  // Decrypt the data to get actual size
+  let bytes: Uint8Array;
+  try {
+    console.log(`[FILE_SIZE] Decrypting data...`);
+    bytes = decryptData(encryptedBytes);
+    console.log(`[FILE_SIZE] Decrypted bytes: ${bytes.length} bytes`);
+  } catch (error) {
+    // If decryption fails, return encrypted size as fallback
+    console.warn(`[FILE_SIZE] Decryption failed, using encrypted size as fallback: ${encryptedBytes.length} bytes`);
+    return encryptedBytes.length;
+  }
+
+  // Remove padding (trailing null bytes)
+  let trimmedBytes = bytes;
+  let lastNonZero = bytes.length - 1;
+  while (lastNonZero >= 0 && bytes[lastNonZero] === 0) {
+    lastNonZero--;
+  }
+  if (lastNonZero < bytes.length - 1) {
+    trimmedBytes = bytes.slice(0, lastNonZero + 1);
+    console.log(`[FILE_SIZE] Removed ${bytes.length - trimmedBytes.length} bytes of padding`);
+  }
+
+  // Check if there's metadata header (JSON at the start)
+  try {
+    const textDecoder = new TextDecoder();
+    const firstChars = textDecoder.decode(trimmedBytes.slice(0, Math.min(100, trimmedBytes.length)));
+    
+    if (firstChars.startsWith("{")) {
+      // Try to parse as JSON metadata
+      const jsonEnd = firstChars.indexOf("}");
+      if (jsonEnd > 0) {
+        const metadataStr = firstChars.slice(0, jsonEnd + 1);
+        const metadata = JSON.parse(metadataStr);
+        
+        if (metadata.type === "file" && metadata.filename) {
+          // It's a file, return the file data size (excluding metadata)
+          const metadataBytes = new TextEncoder().encode(metadataStr);
+          const fileDataSize = trimmedBytes.length - metadataBytes.length;
+          console.log(`[FILE_SIZE] Detected file with metadata. File data size: ${fileDataSize} bytes (metadata: ${metadataBytes.length} bytes)`);
+          return fileDataSize;
+        }
+      }
+    }
+  } catch (error) {
+    // Not JSON metadata, continue
+    console.log(`[FILE_SIZE] No JSON metadata detected, using full trimmed size`);
+  }
+
+  // Return the trimmed size
+  console.log(`[FILE_SIZE] Final file size: ${trimmedBytes.length} bytes`);
+  return trimmedBytes.length;
+}
+
+export async function uploadToFilecoin(
+  data: string | Uint8Array,
+  options?: { filename?: string; mimeType?: string }
+): Promise<{
   pieceCid: string;
   size: number;
 }> {
   const synapse = await getSynapse(true);
-  const data = new TextEncoder().encode(message);
+  
+  let dataBytes: Uint8Array;
+  
+  // If it's a file (has filename), add metadata header
+  if (options?.filename && data instanceof Uint8Array) {
+    const metadata = {
+      type: "file",
+      filename: options.filename,
+      mimeType: options.mimeType || "application/octet-stream",
+    };
+    const metadataStr = JSON.stringify(metadata);
+    const metadataBytes = new TextEncoder().encode(metadataStr);
+    
+    // Combine metadata + file data
+    dataBytes = new Uint8Array(metadataBytes.length + data.length);
+    dataBytes.set(metadataBytes, 0);
+    dataBytes.set(data, metadataBytes.length);
+  } else if (typeof data === "string") {
+    // It's a text message
+    dataBytes = new TextEncoder().encode(data);
+  } else {
+    // It's binary data without filename
+    dataBytes = data;
+  }
   
   // Encrypt the data first
-  const encryptedData = encryptData(data);
+  const encryptedData = encryptData(dataBytes);
   
   // Filecoin requires minimum 127 bytes, pad if needed
   const MIN_SIZE = 127;

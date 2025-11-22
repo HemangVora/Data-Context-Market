@@ -64,26 +64,61 @@ router.get("/download_test", async (req, res) => {
 
 router.post("/upload", async (req, res) => {
   try {
-    const { message } = req.body;
+    const { message, file, filename, mimeType } = req.body;
 
-    if (!message) {
+    if (!message && !file) {
       return res.status(400).json({
-        error: "Missing message in request body",
-        usage: "POST /upload with JSON body: { \"message\": \"your message here\" }",
-        example: { message: "Hello, Filecoin!" },
+        error: "Missing message or file in request body",
+        usage: "POST /upload with JSON body: { \"message\": \"text\" } OR { \"file\": \"base64\", \"filename\": \"file.pdf\", \"mimeType\": \"application/pdf\" }",
+        examples: [
+          { message: "Hello, Filecoin!" },
+          { file: "JVBERi0xLjQK...", filename: "document.pdf", mimeType: "application/pdf" },
+        ],
       });
     }
 
-    const messageSize = new TextEncoder().encode(message).length;
-    console.log(`[UPLOAD] Starting upload for message (${messageSize} bytes)`);
-    const { pieceCid, size } = await uploadToFilecoin(message);
-    console.log(`[UPLOAD] Successfully uploaded to Filecoin - PieceCID: ${pieceCid}, Size: ${size} bytes`);
+    let pieceCid: string;
+    let size: number;
+    let uploadType: string;
+
+    if (file) {
+      // File upload (base64 encoded)
+      if (!filename) {
+        return res.status(400).json({
+          error: "filename is required when uploading a file",
+        });
+      }
+
+      const fileBytes = Buffer.from(file, "base64");
+      const fileSize = fileBytes.length;
+      console.log(`[UPLOAD] Starting upload for file: ${filename} (${fileSize} bytes, ${mimeType || "unknown type"})`);
+      
+      ({ pieceCid, size } = await uploadToFilecoin(fileBytes, {
+        filename,
+        mimeType: mimeType || "application/octet-stream",
+      }));
+      
+      uploadType = "file";
+      console.log(`[UPLOAD] Successfully uploaded file to Filecoin - PieceCID: ${pieceCid}, Size: ${size} bytes`);
+    } else {
+      // Text message upload
+      const messageSize = new TextEncoder().encode(message).length;
+      console.log(`[UPLOAD] Starting upload for message (${messageSize} bytes)`);
+      
+      ({ pieceCid, size } = await uploadToFilecoin(message));
+      
+      uploadType = "message";
+      console.log(`[UPLOAD] Successfully uploaded message to Filecoin - PieceCID: ${pieceCid}, Size: ${size} bytes`);
+    }
 
     return res.json({
       success: true,
       pieceCid: pieceCid,
       size: size,
-      message: "Message stored successfully on Filecoin",
+      type: uploadType,
+      message: uploadType === "file" 
+        ? `File "${filename}" stored successfully on Filecoin`
+        : "Message stored successfully on Filecoin",
     });
   } catch (error: any) {
     console.error("Upload error:", error);

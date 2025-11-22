@@ -65,21 +65,38 @@ server.tool(
 // Add tool to upload content to Filecoin
 server.tool(
   "upload-to-filecoin",
-  "Upload a message to Filecoin storage. Returns the PieceCID that can be used to download the content later.",
+  "Upload a message or file to Filecoin storage. Returns the PieceCID that can be used to download the content later. For files, provide base64-encoded data.",
   {
-    message: z.string().describe("The message content to upload to Filecoin"),
+    message: z.string().optional().describe("Text message to upload to Filecoin"),
+    file: z.string().optional().describe("Base64-encoded file data to upload"),
+    filename: z.string().optional().describe("Filename (required when uploading a file)"),
+    mimeType: z.string().optional().describe("MIME type of the file (e.g., 'application/pdf', 'image/png')"),
   },
-  async (args: { message: string }) => {
+  async (args: { message?: string; file?: string; filename?: string; mimeType?: string }) => {
     try {
-      const { message } = args;
+      const { message, file, filename, mimeType } = args;
       
-      if (!message) {
-        throw new Error("message parameter is required");
+      if (!message && !file) {
+        throw new Error("Either message or file parameter is required");
       }
 
-      const res = await client.post("/upload", {
-        message,
-      });
+      if (file && !filename) {
+        throw new Error("filename is required when uploading a file");
+      }
+
+      const payload: any = {};
+      if (message) {
+        payload.message = message;
+      }
+      if (file) {
+        payload.file = file;
+        payload.filename = filename;
+        if (mimeType) {
+          payload.mimeType = mimeType;
+        }
+      }
+
+      const res = await client.post("/upload", payload);
       
       return {
         content: [
