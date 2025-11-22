@@ -2,9 +2,18 @@ import { createClient } from '@clickhouse/client';
 import { evmPortalSource, EvmQueryBuilder, type EvmPortalData } from '@subsquid/pipes/evm';
 import { clickhouseTarget } from '@subsquid/pipes/targets/clickhouse';
 
-// MultiLogger contract
-const CONTRACT_ADDRESS = "0x78f99D1412CEf774A8809a28E7f082D7Ce47d648";
-const FROM_BLOCK = 9678513;
+// Configuration - modify these values for your deployment
+const CONFIG = {
+  // Base Sepolia deployment
+  CONTRACT_ADDRESS: process.env.CONTRACT_ADDRESS || "0x2221f8B0c6Ae88Fa374af7E07425C52FeBe1Ac6C",
+  FROM_BLOCK: parseInt(process.env.FROM_BLOCK || "34003825"),
+  PORTAL_URL: process.env.PORTAL_URL || "https://portal.sqd.dev/datasets/base-sepolia",
+
+  // ClickHouse
+  CLICKHOUSE_URL: process.env.CLICKHOUSE_URL || "http://localhost:8123",
+  CLICKHOUSE_USER: process.env.CLICKHOUSE_USER || "default",
+  CLICKHOUSE_PASSWORD: process.env.CLICKHOUSE_PASSWORD || "password",
+};
 
 // Event signatures
 const TOPICS = {
@@ -30,14 +39,14 @@ async function main() {
     })
     .addLog({
       request: {
-        address: [CONTRACT_ADDRESS.toLowerCase()],
+        address: [CONFIG.CONTRACT_ADDRESS.toLowerCase()],
         topic0: Object.values(TOPICS),
       },
-      range: { from: FROM_BLOCK },
+      range: { from: CONFIG.FROM_BLOCK },
     });
 
   await evmPortalSource({
-    portal: 'https://portal.sqd.dev/datasets/ethereum-sepolia',
+    portal: CONFIG.PORTAL_URL,
     query: queryBuilder,
   })
     .pipe({
@@ -74,9 +83,9 @@ async function main() {
     .pipeTo(
       clickhouseTarget({
         client: createClient({
-          username: 'default',
-          password: 'password',
-          url: 'http://localhost:8123',
+          username: CONFIG.CLICKHOUSE_USER,
+          password: CONFIG.CLICKHOUSE_PASSWORD,
+          url: CONFIG.CLICKHOUSE_URL,
         }),
         onStart: async ({ store }) => {
           await store.command({

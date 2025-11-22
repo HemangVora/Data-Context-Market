@@ -2,7 +2,7 @@
 pragma solidity ^0.8.13;
 
 import "forge-std/Script.sol";
-import "../src/SimpleLogger.sol";
+import "../src/MultiLogger.sol";
 
 contract DeployScript is Script {
     function run() external {
@@ -10,9 +10,9 @@ contract DeployScript is Script {
 
         vm.startBroadcast(deployerPrivateKey);
 
-        SimpleLogger logger = new SimpleLogger();
+        MultiLogger logger = new MultiLogger();
 
-        console.log("SimpleLogger deployed at:", address(logger));
+        console.log("MultiLogger deployed at:", address(logger));
 
         vm.stopBroadcast();
     }
