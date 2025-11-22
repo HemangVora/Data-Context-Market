@@ -32,18 +32,23 @@ const server = new McpServer({
   version: "1.0.0",
 });
 
-// Hardcoded PieceCID for now
-const PIECE_CID = "bafkzcibciacdwydlhwglaeicrliqxxywcbrrol63q3ybv55yw7edjylmqq5pumq";
-
 // Add tool to download content from Filecoin
 server.tool(
   "download-from-filecoin",
-  "Download content from Filecoin storage. Returns the content along with metadata.",
-  {},
-  async () => {
+  "Download content from Filecoin storage using a PieceCID. Returns the content along with metadata including description, price, and payment address if available.",
+  {
+    pieceCid: z.string().describe("The PieceCID of the file to download from Filecoin (e.g., 'bafkzcibciacdwydlhwglaeicrliqxxywcbrrol63q3ybv55yw7edjylmqq5pumq')"),
+  },
+  async (args: { pieceCid: string }) => {
     try {
+      const { pieceCid } = args;
+      
+      if (!pieceCid) {
+        throw new Error("pieceCid is required");
+      }
+      
       const res = await client.get("/download", {
-        params: { pieceCid: PIECE_CID },
+        params: { pieceCid },
       });
       
       return {
