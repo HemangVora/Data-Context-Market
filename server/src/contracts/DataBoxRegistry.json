@@ -1,6 +1,61 @@
 {
-  "address": "0x74Bde37e9a69Ee394898ec3C518a61bB0dB21754",
+  "address": "0xBf9d0Feab864FbA4eEE402956789bE9af9cd9837",
   "abi": [
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": false,
+          "internalType": "string",
+          "name": "pieceCid",
+          "type": "string"
+        },
+        {
+          "indexed": false,
+          "internalType": "string",
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "indexed": false,
+          "internalType": "string",
+          "name": "description",
+          "type": "string"
+        },
+        {
+          "indexed": false,
+          "internalType": "string",
+          "name": "filetype",
+          "type": "string"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "priceUSDC",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "string",
+          "name": "payAddress",
+          "type": "string"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "timestamp",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "string",
+          "name": "x402TxHash",
+          "type": "string"
+        }
+      ],
+      "name": "DataDownloaded",
+      "type": "event"
+    },
     {
       "anonymous": false,
       "inputs": [
@@ -155,6 +210,24 @@
         }
       ],
       "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "string",
+          "name": "_pieceCid",
+          "type": "string"
+        },
+        {
+          "internalType": "string",
+          "name": "_x402TxHash",
+          "type": "string"
+        }
+      ],
+      "name": "register_download",
+      "outputs": [],
+      "stateMutability": "nonpayable",
       "type": "function"
     },
     {
