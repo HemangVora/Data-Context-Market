@@ -1,6 +1,7 @@
 import { Navbar } from "@/components/Navbar";
 import { Hero } from "@/components/Hero";
 import { DatasetEvents } from "@/components/DatasetEvents";
+import { DatasetDownloads } from "@/components/DatasetDownloads";
 import { Marketplace } from "@/components/Marketplace";
 import { Footer } from "@/components/Footer";
 
@@ -11,6 +12,7 @@ export default function Home() {
       <Hero />
       {/* <DatasetEvents /> */}
       <Marketplace />
+      <DatasetDownloads />
       <Footer />
     </main>
   );
