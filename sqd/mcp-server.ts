@@ -4,7 +4,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { spawn, ChildProcess } from "child_process";
+import { spawn, ChildProcess, execSync } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
@@ -27,6 +27,53 @@ const server = new Server(
 // Store running pipe processes
 const runningPipes: Map<string, ChildProcess> = new Map();
 
+// ClickHouse container management
+const CLICKHOUSE_CONTAINER = "pipes-clickhouse";
+
+async function startClickHouse(): Promise<void> {
+  try {
+    // Check if container exists
+    const exists = execSync(`docker ps -a --filter name=${CLICKHOUSE_CONTAINER} --format "{{.Names}}"`, { encoding: "utf-8" }).trim();
+
+    if (exists === CLICKHOUSE_CONTAINER) {
+      // Container exists, check if running
+      const running = execSync(`docker ps --filter name=${CLICKHOUSE_CONTAINER} --format "{{.Names}}"`, { encoding: "utf-8" }).trim();
+      if (running !== CLICKHOUSE_CONTAINER) {
+        // Start existing container
+        execSync(`docker start ${CLICKHOUSE_CONTAINER}`, { stdio: "ignore" });
+      }
+    } else {
+      // Create and start new container with no password
+      execSync(`docker run -d --name ${CLICKHOUSE_CONTAINER} -p 8123:8123 -p 9000:9000 -e CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1 -e CLICKHOUSE_PASSWORD= clickhouse/clickhouse-server`, { stdio: "ignore" });
+    }
+
+    // Wait for ClickHouse to be ready
+    let retries = 10;
+    while (retries > 0) {
+      try {
+        execSync(`docker exec ${CLICKHOUSE_CONTAINER} clickhouse-client --query "SELECT 1"`, { stdio: "ignore" });
+        break;
+      } catch {
+        retries--;
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    }
+    if (retries === 0) {
+      throw new Error("ClickHouse failed to start");
+    }
+  } catch (error: any) {
+    throw new Error(`Failed to start ClickHouse: ${error.message}`);
+  }
+}
+
+function stopClickHouse(): void {
+  try {
+    execSync(`docker rm -f ${CLICKHOUSE_CONTAINER}`, { stdio: "ignore" });
+  } catch {
+    // Ignore errors if container doesn't exist
+  }
+}
+
 // Fetch ABI from Etherscan (V2 API)
 async function fetchABI(contractAddress: string, network: string = "mainnet"): Promise<any> {
   const apiKey = process.env.ETHERSCAN_API_KEY || "";
@@ -46,7 +93,7 @@ async function fetchABI(contractAddress: string, network: string = "mainnet"): P
   const url = `https://api.etherscan.io/v2/api?chainid=${chainId}&module=contract&action=getabi&address=${contractAddress}&apikey=${apiKey}`;
 
   const response = await fetch(url);
-  const data = await response.json();
+  const data = await response.json() as { status: string; message?: string; result: string };
 
   if (data.status !== "1") {
     throw new Error(`Failed to fetch ABI: ${data.message || data.result}`);
@@ -98,15 +145,22 @@ function generatePipeCode(
 import { evmPortalSource, EvmQueryBuilder, type EvmPortalData } from '@subsquid/pipes/evm';
 import { clickhouseTarget } from '@subsquid/pipes/targets/clickhouse';
 import { keccak256, toBytes } from 'viem';
+import * as fs from 'fs';
+import * as path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Configuration
 const CONFIG = {
   CONTRACT_ADDRESS: "${contractAddress.toLowerCase()}",
   FROM_BLOCK: ${fromBlock},
   PORTAL_URL: "${portalUrl}",
-  CLICKHOUSE_URL: process.env.CLICKHOUSE_URL || "http://localhost:8123",
-  CLICKHOUSE_USER: process.env.CLICKHOUSE_USER || "default",
-  CLICKHOUSE_PASSWORD: process.env.CLICKHOUSE_PASSWORD || "password",
+  OUTPUT_DIR: path.join(__dirname, 'output'),
+  CSV_FILE: '${tableName}.csv',
+  TABLE_NAME: '${tableName}',
+  CLICKHOUSE_URL: 'http://localhost:8123',
 };
 
 // Event signatures
@@ -126,6 +180,13 @@ async function main() {
   console.log('Contract:', CONFIG.CONTRACT_ADDRESS);
   console.log('Network: ${network}');
   console.log('Events:', Object.keys(TOPICS).join(', '));
+
+  // Create output directory if it doesn't exist
+  if (!fs.existsSync(CONFIG.OUTPUT_DIR)) {
+    fs.mkdirSync(CONFIG.OUTPUT_DIR, { recursive: true });
+  }
+
+  const csvPath = path.join(CONFIG.OUTPUT_DIR, CONFIG.CSV_FILE);
 
   const queryBuilder = new EvmQueryBuilder()
     .addFields({
@@ -186,14 +247,14 @@ async function main() {
     .pipeTo(
       clickhouseTarget({
         client: createClient({
-          username: CONFIG.CLICKHOUSE_USER,
-          password: CONFIG.CLICKHOUSE_PASSWORD,
           url: CONFIG.CLICKHOUSE_URL,
+          username: 'default',
+          password: '',
         }),
         onStart: async ({ store }) => {
           await store.command({
             query: \`
-              CREATE TABLE IF NOT EXISTS ${tableName} (
+              CREATE TABLE IF NOT EXISTS \${CONFIG.TABLE_NAME} (
                 block_number  UInt64,
                 timestamp     UInt64,
                 event_type    String,
@@ -204,31 +265,53 @@ async function main() {
                 topic2        String,
                 topic3        String
               )
-              ENGINE = ReplacingMergeTree()
-              ORDER BY (block_number, tx_hash, log_index)
+              ENGINE = MergeTree
+              ORDER BY block_number
             \`,
           });
-          console.log('Table ${tableName} created/verified');
+          console.log(\`Created table \${CONFIG.TABLE_NAME}\`);
         },
         onData: async ({ data, store }) => {
-          if (data.length > 0) {
-            await store.insert({
-              table: '${tableName}',
-              values: data,
-              format: 'JSONEachRow',
-            });
-            console.log(\`Inserted \${data.length} events\`);
+          if (data.length === 0) return;
+
+          // Insert to ClickHouse
+          await store.insert({
+            table: CONFIG.TABLE_NAME,
+            values: data,
+            format: 'JSONEachRow',
+          });
+
+          // Also write to CSV
+          const fileExists = fs.existsSync(csvPath);
+          const headers = ['block_number', 'timestamp', 'event_type', 'tx_hash', 'log_index', 'data', 'topic1', 'topic2', 'topic3'];
+
+          const rows = data.map(e =>
+            [e.block_number, e.timestamp, e.event_type, e.tx_hash, e.log_index, e.data, e.topic1, e.topic2, e.topic3]
+              .map(v => \`"\${String(v).replace(/"/g, '""')}"\`)
+              .join(',')
+          );
+
+          let content = '';
+          if (!fileExists) {
+            content = headers.join(',') + '\\n';
+            console.log(\`Creating CSV file: \${csvPath}\`);
           }
+          content += rows.join('\\n') + '\\n';
+
+          fs.appendFileSync(csvPath, content);
+          console.log(\`Processed \${data.length} events (CSV + ClickHouse)\`);
         },
         onRollback: async ({ safeCursor, store }) => {
           await store.removeAllRows({
-            tables: ['${tableName}'],
+            tables: [CONFIG.TABLE_NAME],
             where: \`block_number > {latest:UInt64}\`,
             params: { latest: safeCursor.number },
           });
         },
-      }),
+      })
     );
+
+  console.log('Indexing complete!');
 }
 
 void main();
@@ -413,6 +496,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           };
         }
 
+        // Start ClickHouse container
+        try {
+          await startClickHouse();
+        } catch (error: any) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Failed to start ClickHouse: ${error.message}`,
+              },
+            ],
+            isError: true,
+          };
+        }
+
         const child = spawn("npx", ["tsx", pipePath], {
           cwd: __dirname,
           stdio: ["ignore", "pipe", "pipe"],
@@ -426,8 +524,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           output += data.toString();
         });
 
-        child.on("exit", () => {
+        child.on("exit", (code) => {
           runningPipes.delete(pipeFile);
+          // Stop ClickHouse when pipe exits and no other pipes are running
+          if (runningPipes.size === 0) {
+            stopClickHouse();
+            console.error(`Pipe ${pipeFile} completed (exit code: ${code}). ClickHouse stopped.`);
+          }
         });
 
         runningPipes.set(pipeFile, child);
@@ -439,7 +542,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content: [
             {
               type: "text",
-              text: `Started pipe ${pipeFile} (PID: ${child.pid})\n\nInitial output:\n${output || "(waiting for output...)"}`,
+              text: `Started pipe ${pipeFile} (PID: ${child.pid})\n\nClickHouse container started automatically.\n\nInitial output:\n${output || "(waiting for output...)"}`,
             },
           ],
         };
@@ -463,11 +566,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         child.kill("SIGTERM");
         runningPipes.delete(pipeFile);
 
+        // Stop ClickHouse if no other pipes are running
+        let clickhouseStopped = false;
+        if (runningPipes.size === 0) {
+          stopClickHouse();
+          clickhouseStopped = true;
+        }
+
         return {
           content: [
             {
               type: "text",
-              text: `Stopped pipe ${pipeFile}`,
+              text: `Stopped pipe ${pipeFile}${clickhouseStopped ? "\nClickHouse container stopped." : ""}`,
             },
           ],
         };
