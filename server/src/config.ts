@@ -8,6 +8,7 @@ export const payTo = process.env.ADDRESS as `0x${string}` | SolanaAddress;
 export const port = process.env.PORT || 4021;
 export const privateKey = process.env.PRIVATE_KEY;
 export const rpcUrl = process.env.RPC_URL;
+export const sepoliaRpcUrl = process.env.SEPOLIA_RPC_URL;
 
 if (!facilitatorUrl || !payTo) {
   console.error("Missing required environment variables");

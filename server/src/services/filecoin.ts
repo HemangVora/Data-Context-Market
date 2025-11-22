@@ -89,6 +89,9 @@ export async function downloadFromFilecoin(pieceCid: string): Promise<{
   content: string;
   filename?: string;
   mimeType?: string;
+  description?: string;
+  priceUSDC?: string;
+  payAddress?: string;
   message?: string;
 }> {
   const synapse = await getSynapse(false);
@@ -145,6 +148,9 @@ export async function downloadFromFilecoin(pieceCid: string): Promise<{
             content: base64Content,
             filename: metadata.filename,
             mimeType: metadata.mimeType || "application/octet-stream",
+            description: metadata.description,
+            priceUSDC: metadata.priceUSDC,
+            payAddress: metadata.payAddress,
           };
         }
       }
@@ -241,9 +247,79 @@ export async function getFileSizeFromFilecoin(pieceCid: string): Promise<number>
   return trimmedBytes.length;
 }
 
+/**
+ * Downloads a file from a URL and returns the file data, filename, and mimeType
+ */
+export async function downloadFromUrl(url: string): Promise<{
+  data: Uint8Array;
+  filename?: string;
+  mimeType?: string;
+}> {
+  console.log(`[URL_DOWNLOAD] Starting download from URL: ${url}`);
+  
+  try {
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status} ${response.statusText}`);
+    }
+    
+    // Get content type from headers
+    const contentType = response.headers.get("content-type") || undefined;
+    console.log(`[URL_DOWNLOAD] Content-Type: ${contentType || "unknown"}`);
+    
+    // Try to extract filename from Content-Disposition header
+    let filename: string | undefined;
+    const contentDisposition = response.headers.get("content-disposition");
+    if (contentDisposition) {
+      const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+      if (filenameMatch && filenameMatch[1]) {
+        filename = filenameMatch[1].replace(/['"]/g, "");
+        console.log(`[URL_DOWNLOAD] Filename from Content-Disposition: ${filename}`);
+      }
+    }
+    
+    // If no filename from header, try to extract from URL
+    if (!filename) {
+      try {
+        const urlObj = new URL(url);
+        const pathname = urlObj.pathname;
+        const urlFilename = pathname.split("/").pop();
+        if (urlFilename && urlFilename.includes(".")) {
+          filename = urlFilename.split("?")[0]; // Remove query params
+          console.log(`[URL_DOWNLOAD] Filename from URL: ${filename}`);
+        }
+      } catch (error) {
+        // Invalid URL, skip filename extraction
+      }
+    }
+    
+    // Download the file as array buffer
+    const arrayBuffer = await response.arrayBuffer();
+    const data = new Uint8Array(arrayBuffer);
+    
+    console.log(`[URL_DOWNLOAD] Successfully downloaded ${data.length} bytes from URL`);
+    
+    return {
+      data,
+      filename,
+      mimeType: contentType,
+    };
+  } catch (error: any) {
+    console.error(`[URL_DOWNLOAD] Error downloading from URL:`, error);
+    throw new Error(`Failed to download from URL: ${error.message}`);
+  }
+}
+
 export async function uploadToFilecoin(
   data: string | Uint8Array,
-  options?: { filename?: string; mimeType?: string }
+  options: { 
+    filename?: string; 
+    mimeType?: string;
+    description: string;
+    priceUSDC: number | string;
+    payAddress: string;
+  }
 ): Promise<{
   pieceCid: string;
   size: number;
@@ -253,12 +329,18 @@ export async function uploadToFilecoin(
   let dataBytes: Uint8Array;
   
   // If it's a file (has filename), add metadata header
-  if (options?.filename && data instanceof Uint8Array) {
-    const metadata = {
+  if (options.filename && data instanceof Uint8Array) {
+    const metadata: any = {
       type: "file",
       filename: options.filename,
       mimeType: options.mimeType || "application/octet-stream",
+      description: options.description,
+      priceUSDC: typeof options.priceUSDC === "string" 
+        ? options.priceUSDC 
+        : options.priceUSDC.toString(),
+      payAddress: options.payAddress,
     };
+    
     const metadataStr = JSON.stringify(metadata);
     const metadataBytes = new TextEncoder().encode(metadataStr);
     

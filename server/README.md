@@ -17,6 +17,10 @@
    PRIVATE_KEY=your_private_key_here  # Required for /upload, optional for /download
    RPC_URL=https://api.calibration.node.glif.io/rpc/v1
    
+   # Smart contract (Sepolia)
+   SEPOLIA_RPC_URL=https://sepolia.infura.io/v3/YOUR_INFURA_KEY
+   # Or use a public RPC: https://rpc.sepolia.org
+   
    # required if using the Base mainnet facilitator
    CDP_API_KEY_ID="Coinbase Developer Platform Key"
    CDP_API_KEY_SECRET="Coinbase Developer Platform Key Secret"
@@ -26,6 +30,7 @@
    - Replace `0xYourEthereumAddress` with your actual Ethereum address where you want to receive payments.
    - The `/download` endpoint doesn't require a private key - downloads are public.
    - The `/upload` endpoint requires a valid `PRIVATE_KEY` for authentication.
+   - `SEPOLIA_RPC_URL` is required for smart contract registration. You can get a free RPC URL from Infura, Alchemy, or use a public RPC like `https://rpc.sepolia.org`.
 
 3. **Run the server:**
    ```bash
