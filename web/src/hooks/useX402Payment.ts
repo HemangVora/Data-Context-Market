@@ -169,10 +169,16 @@ export function useX402Payment() {
         console.log("[X402] Payment transaction sent:", txHash);
 
         // Step 5: Create payment proof header
-        // Format: txHash:chainId
-        const paymentProof = `${txHash}:${chainId}`;
+        // The x402 protocol expects a base64-encoded JSON object
+        const paymentProofData = {
+          transactionHash: txHash,
+          chainId: chainId,
+        };
+        const paymentProofJson = JSON.stringify(paymentProofData);
+        const paymentProof = btoa(paymentProofJson); // Base64 encode
 
-        console.log("[X402] Payment proof created:", paymentProof);
+        console.log("[X402] Payment proof created:", paymentProofData);
+        console.log("[X402] Payment proof (base64):", paymentProof);
 
         // Step 6: Retry download with X-PAYMENT header
         console.log("[X402] Retrying download with payment proof...");
