@@ -11,6 +11,7 @@
     "interact:baseSepolia": "hardhat run scripts/interact.js --network baseSepolia",
     "interact:base": "hardhat run scripts/interact.js --network base",
     "interact:local": "hardhat run scripts/interact.js --network localhost",
+    "interact:sepolia": "hardhat run scripts/interact.js --network sepolia",
     "events:baseSepolia": "hardhat run scripts/readEvents.js --network baseSepolia",
     "events:base": "hardhat run scripts/readEvents.js --network base",
     "events:local": "hardhat run scripts/readEvents.js --network localhost",
