@@ -6,6 +6,7 @@
     "compile": "hardhat compile",
     "test": "hardhat test",
     "deploy:baseSepolia": "hardhat run scripts/deploy.js --network baseSepolia",
+    "deploy:sepolia": "hardhat run scripts/deploy.js --network sepolia",
     "deploy:base": "hardhat run scripts/deploy.js --network base",
     "deploy:local": "hardhat run scripts/deploy.js --network localhost",
     "interact:baseSepolia": "hardhat run scripts/interact.js --network baseSepolia",
