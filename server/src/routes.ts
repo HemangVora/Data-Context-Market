@@ -12,24 +12,96 @@ router.get("/hello", (req, res) => {
 });
 
 // Filecoin endpoints
+// Download endpoint - supports both /download?pieceCid=... and /download/:pieceCid
 router.get("/download", async (req, res) => {
+  console.log(`[ROUTE] /download route handler called`);
+  console.log(`[ROUTE] Request path: ${req.path}, query:`, req.query, `params:`, req.params);
+  
   try {
-    const pieceCid = req.query.pieceCid as string;
+    // Support both query parameter and path parameter
+    const pieceCid = ((req.params as any).pieceCid as string) || (req.query.pieceCid as string);
+    console.log(`[ROUTE] Extracted pieceCid: ${pieceCid}`);
 
     if (!pieceCid) {
+      console.log(`[ROUTE] ✗ Missing pieceCid parameter`);
       return res.status(400).json({
         error: "Missing pieceCid parameter",
-        usage: "GET /download?pieceCid=<PieceCID>",
-        example: "GET /download?pieceCid=baga6ea4seaq...",
+        usage: [
+          "GET /download?pieceCid=<PieceCID>",
+          "GET /download/<PieceCID>",
+        ],
+        example: [
+          "GET /download?pieceCid=baga6ea4seaq...",
+          "GET /download/baga6ea4seaq...",
+        ],
       });
     }
 
-    console.log(`[DOWNLOAD] Starting download for PieceCID: ${pieceCid}`);
+    console.log(`[ROUTE] Starting download for PieceCID: ${pieceCid}`);
     const result = await downloadFromFilecoin(pieceCid);
-    console.log(`[DOWNLOAD] Successfully downloaded ${result.size} bytes (format: ${result.format})`);
+    
+    // Add contract metadata (name and filetype) if available from middleware
+    const contractData = (req as any).contractData;
+    if (contractData) {
+      result.name = contractData.name;
+      result.filetype = contractData.filetype;
+      // Set type: "message" if it's a message, otherwise use filetype
+      result.type = result.format === "text" && !result.filename ? "message" : (contractData.filetype || result.mimeType || "application/octet-stream");
+    } else {
+      // Fallback: use filetype from result if available
+      result.type = result.format === "text" && !result.filename ? "message" : (result.mimeType || "application/octet-stream");
+    }
+    
+    console.log(`[ROUTE] ✓ Successfully downloaded ${result.size} bytes (format: ${result.format}, type: ${result.type})`);
     return res.json(result);
   } catch (error: any) {
-    console.error("Download error:", error);
+    console.error(`[ROUTE] ✗ Download error:`, error);
+    console.error(`[ROUTE] Error stack:`, error.stack);
+    return res.status(500).json({
+      error: "Download failed",
+      message: error.message || "Unknown error occurred",
+    });
+  }
+});
+
+// Also support path parameter format: /download/:pieceCid
+router.get("/download/:pieceCid", async (req, res) => {
+  console.log(`[ROUTE] /download/:pieceCid route handler called`);
+  console.log(`[ROUTE] Request path: ${req.path}, params:`, req.params);
+  
+  try {
+    const pieceCid = req.params.pieceCid as string;
+    console.log(`[ROUTE] Extracted pieceCid from params: ${pieceCid}`);
+
+    if (!pieceCid) {
+      console.log(`[ROUTE] ✗ Missing pieceCid parameter`);
+      return res.status(400).json({
+        error: "Missing pieceCid parameter",
+        usage: "GET /download/<PieceCID>",
+        example: "GET /download/baga6ea4seaq...",
+      });
+    }
+
+    console.log(`[ROUTE] Starting download for PieceCID: ${pieceCid}`);
+    const result = await downloadFromFilecoin(pieceCid);
+    
+    // Add contract metadata (name and filetype) if available from middleware
+    const contractData = (req as any).contractData;
+    if (contractData) {
+      result.name = contractData.name;
+      result.filetype = contractData.filetype;
+      // Set type: "message" if it's a message, otherwise use filetype
+      result.type = result.format === "text" && !result.filename ? "message" : (contractData.filetype || result.mimeType || "application/octet-stream");
+    } else {
+      // Fallback: use filetype from result if available
+      result.type = result.format === "text" && !result.filename ? "message" : (result.mimeType || "application/octet-stream");
+    }
+    
+    console.log(`[ROUTE] ✓ Successfully downloaded ${result.size} bytes (format: ${result.format}, type: ${result.type})`);
+    return res.json(result);
+  } catch (error: any) {
+    console.error(`[ROUTE] ✗ Download error:`, error);
+    console.error(`[ROUTE] Error stack:`, error.stack);
     return res.status(500).json({
       error: "Download failed",
       message: error.message || "Unknown error occurred",
@@ -108,6 +180,8 @@ router.post("/upload", async (req, res) => {
     let size: number;
     let uploadType: string;
     let finalFilename: string | undefined;
+    let finalName: string = "";
+    let finalFiletype: string = "";
 
     // Prepare upload options with required payment metadata
     const uploadOptions: {
@@ -135,6 +209,8 @@ router.post("/upload", async (req, res) => {
       
       finalFilename = urlFilename || filename || `downloaded_file_${Date.now()}`;
       const finalMimeType = urlMimeType || mimeType || "application/octet-stream";
+      finalName = finalFilename || `downloaded_file_${Date.now()}`;
+      finalFiletype = finalMimeType;
       
       console.log(`[UPLOAD] Step 1 complete: Downloaded ${data.length} bytes from external URL (filename: ${finalFilename}, type: ${finalMimeType})`);
       console.log(`[UPLOAD] Step 2: Encrypting and uploading to Filecoin...`);
@@ -159,14 +235,17 @@ router.post("/upload", async (req, res) => {
       const fileSize = fileBytes.length;
       console.log(`[UPLOAD] Starting upload for file: ${filename} (${fileSize} bytes, ${mimeType || "unknown type"})`);
       
+      const finalMimeType = mimeType || "application/octet-stream";
       ({ pieceCid, size } = await uploadToFilecoin(fileBytes, {
         filename,
-        mimeType: mimeType || "application/octet-stream",
+        mimeType: finalMimeType,
         ...uploadOptions,
       }));
       
       uploadType = "file";
       finalFilename = filename;
+      finalName = filename;
+      finalFiletype = finalMimeType;
       console.log(`[UPLOAD] Successfully uploaded file to Filecoin - PieceCID: ${pieceCid}, Size: ${size} bytes`);
     } else {
       // Text message upload
@@ -176,40 +255,50 @@ router.post("/upload", async (req, res) => {
       ({ pieceCid, size } = await uploadToFilecoin(message, uploadOptions));
       
       uploadType = "message";
+      finalName = `message_${Date.now()}`;
+      finalFiletype = "text/plain";
       console.log(`[UPLOAD] Successfully uploaded message to Filecoin - PieceCID: ${pieceCid}, Size: ${size} bytes`);
     }
 
     // Register upload on smart contract
-    console.log(`[UPLOAD] Registering upload on BAHack smart contract...`);
-    let contractTxHash: string | undefined;
-    let contractBlockNumber: number | undefined;
+    console.log(`[UPLOAD] Registering upload on DataBoxRegistry smart contract...`);
+    let dataRegistryTxHash: string | undefined;
+    let dataRegistryBlockNumber: number | undefined;
     try {
       const contractResult = await registerUploadOnContract(
         pieceCid,
         description,
         priceUSDC,
         payAddress,
+        finalName,
+        finalFiletype,
       );
-      contractTxHash = contractResult.txHash;
-      contractBlockNumber = contractResult.blockNumber;
-      console.log(`[UPLOAD] Successfully registered on contract: ${contractTxHash}`);
+      dataRegistryTxHash = contractResult.txHash;
+      dataRegistryBlockNumber = contractResult.blockNumber;
+      console.log(`[UPLOAD] Successfully registered on contract: ${dataRegistryTxHash}`);
     } catch (error: any) {
       console.error(`[UPLOAD] Failed to register on contract:`, error);
       // Don't fail the entire upload if contract registration fails
       // The file is already on Filecoin, so we log the error but continue
     }
 
+    // Set type: "message" for messages, otherwise use filetype
+    const responseType = uploadType === "message" ? "message" : finalFiletype;
+    
     return res.json({
       success: true,
       pieceCid: pieceCid,
       size: size,
-      type: uploadType,
+      type: responseType,
+      name: finalName,
+      filetype: finalFiletype,
       filename: finalFilename,
       description: description,
       priceUSDC: priceUSDC,
       payAddress: payAddress,
-      contractTxHash: contractTxHash,
-      contractBlockNumber: contractBlockNumber,
+      dataRegistryTxHash: dataRegistryTxHash,
+      dataRegistryTxUrl: dataRegistryTxHash ? `https://sepolia.etherscan.io/tx/${dataRegistryTxHash}` : undefined,
+      dataRegistryBlockNumber: dataRegistryBlockNumber,
       message: uploadType === "url"
         ? `File from URL "${url}" stored successfully on Filecoin as "${finalFilename}"`
         : uploadType === "file"

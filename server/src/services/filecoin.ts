@@ -20,7 +20,17 @@ function getEncryptionKey(): Buffer {
   
   // Remove 0x prefix and convert to buffer (32 bytes for AES-256)
   const keyHex = privateKey.startsWith("0x") ? privateKey.slice(2) : privateKey;
-  return Buffer.from(keyHex, "hex");
+  const keyBuffer = Buffer.from(keyHex, "hex");
+  
+  // Log first and last 4 bytes of key for debugging (not the full key for security)
+  const keyPreview = `${keyBuffer.slice(0, 4).toString('hex')}...${keyBuffer.slice(-4).toString('hex')}`;
+  console.log(`[ENCRYPTION_KEY] Using key (preview): ${keyPreview} (length: ${keyBuffer.length} bytes)`);
+  
+  if (keyBuffer.length !== 32) {
+    throw new Error(`Invalid encryption key length: ${keyBuffer.length} bytes (expected 32 bytes for AES-256)`);
+  }
+  
+  return keyBuffer;
 }
 
 /**
@@ -51,22 +61,37 @@ function encryptData(data: Uint8Array): Uint8Array {
  * Decrypts data using AES-256-GCM
  */
 function decryptData(encryptedData: Uint8Array): Uint8Array {
+  console.log(`[DECRYPT] Starting decryption of ${encryptedData.length} bytes`);
+  
   const key = getEncryptionKey();
+  console.log(`[DECRYPT] Using encryption key (length: ${key.length} bytes)`);
   
   // Extract IV, auth tag, and encrypted data
   const iv = encryptedData.slice(0, IV_LENGTH);
   const authTag = encryptedData.slice(IV_LENGTH, IV_LENGTH + AUTH_TAG_LENGTH);
   const encrypted = encryptedData.slice(IV_LENGTH + AUTH_TAG_LENGTH);
   
-  const decipher = createDecipheriv(ALGORITHM, key, iv);
-  decipher.setAuthTag(authTag);
+  console.log(`[DECRYPT] Extracted IV: ${iv.length} bytes, AuthTag: ${authTag.length} bytes, Encrypted: ${encrypted.length} bytes`);
   
-  const decrypted = Buffer.concat([
-    decipher.update(encrypted),
-    decipher.final(),
-  ]);
-  
-  return new Uint8Array(decrypted);
+  try {
+    const decipher = createDecipheriv(ALGORITHM, key, iv);
+    decipher.setAuthTag(authTag);
+    
+    const decrypted = Buffer.concat([
+      decipher.update(encrypted),
+      decipher.final(),
+    ]);
+    
+    console.log(`[DECRYPT] ✓ Successfully decrypted to ${decrypted.length} bytes`);
+    return new Uint8Array(decrypted);
+  } catch (error: any) {
+    console.error(`[DECRYPT] ✗ Decryption error:`, error.message);
+    if (error.message?.includes("unable to authenticate") || error.message?.includes("Unsupported state")) {
+      console.error(`[DECRYPT] ⚠ This usually means the encryption key doesn't match the one used to encrypt the data.`);
+      console.error(`[DECRYPT] ⚠ Check that PRIVATE_KEY matches the key used when the file was uploaded.`);
+    }
+    throw error;
+  }
 }
 
 async function getSynapse(requirePrivateKey: boolean = false): Promise<Synapse> {
@@ -92,16 +117,34 @@ export async function downloadFromFilecoin(pieceCid: string): Promise<{
   description?: string;
   priceUSDC?: string;
   payAddress?: string;
+  name?: string;
+  filetype?: string;
+  type?: string;
   message?: string;
 }> {
+  console.log(`[FILEcoin] Starting download for PieceCID: ${pieceCid}`);
   const synapse = await getSynapse(false);
+  
+  console.log(`[FILEcoin] Downloading encrypted bytes from Filecoin...`);
   const encryptedBytes = await synapse.storage.download(pieceCid);
+  console.log(`[FILEcoin] Downloaded ${encryptedBytes.length} encrypted bytes`);
 
   // Decrypt the data
   let bytes: Uint8Array;
   try {
+    console.log(`[FILEcoin] Attempting to decrypt data...`);
+    console.log(`[FILEcoin] Encrypted data structure: IV (${IV_LENGTH} bytes) + AuthTag (${AUTH_TAG_LENGTH} bytes) + Encrypted data`);
+    console.log(`[FILEcoin] Total encrypted length: ${encryptedBytes.length} bytes`);
+    
+    if (encryptedBytes.length < IV_LENGTH + AUTH_TAG_LENGTH) {
+      throw new Error(`Encrypted data too short: ${encryptedBytes.length} bytes (minimum ${IV_LENGTH + AUTH_TAG_LENGTH} bytes required)`);
+    }
+    
     bytes = decryptData(encryptedBytes);
-  } catch (error) {
+    console.log(`[FILEcoin] ✓ Successfully decrypted ${bytes.length} bytes`);
+  } catch (error: any) {
+    console.error(`[FILEcoin] ✗ Decryption failed:`, error.message);
+    console.error(`[FILEcoin] Error stack:`, error.stack);
     // If decryption fails, return as binary (might be old unencrypted data)
     const base64Content = Buffer.from(encryptedBytes).toString("base64");
     return {
@@ -113,20 +156,15 @@ export async function downloadFromFilecoin(pieceCid: string): Promise<{
     };
   }
 
-  // Remove padding (trailing null bytes)
-  let trimmedBytes = bytes;
-  let lastNonZero = bytes.length - 1;
-  while (lastNonZero >= 0 && bytes[lastNonZero] === 0) {
-    lastNonZero--;
-  }
-  if (lastNonZero < bytes.length - 1) {
-    trimmedBytes = bytes.slice(0, lastNonZero + 1);
-  }
-
-  // Check if there's metadata header (JSON at the start)
+  // Smart padding removal: Check if data starts with metadata JSON or length prefix
+  let trimmedBytes: Uint8Array = bytes; // Default to all bytes
+  let hasLengthPrefix = false;
+  let originalDataLength: number | undefined;
+  
+  // Check if there's metadata header (JSON at the start) - for files
   try {
     const textDecoder = new TextDecoder();
-    const firstChars = textDecoder.decode(trimmedBytes.slice(0, Math.min(100, trimmedBytes.length)));
+    const firstChars = textDecoder.decode(bytes.slice(0, Math.min(200, bytes.length)));
     
     if (firstChars.startsWith("{")) {
       // Try to parse as JSON metadata
@@ -136,8 +174,26 @@ export async function downloadFromFilecoin(pieceCid: string): Promise<{
         const metadata = JSON.parse(metadataStr);
         
         if (metadata.type === "file" && metadata.filename) {
-          // It's a file, extract the file data
+          // It's a file with metadata
           const metadataBytes = new TextEncoder().encode(metadataStr);
+          
+          // Use originalSize from metadata if available (new format)
+          if (metadata.originalSize !== undefined) {
+            // New format: metadata has originalSize, so total unpadded size = metadataBytes.length + originalSize
+            originalDataLength = metadataBytes.length + metadata.originalSize;
+            console.log(`[FILEcoin] Using stored originalSize from metadata: ${metadata.originalSize} (total: ${originalDataLength})`);
+            trimmedBytes = bytes.slice(0, originalDataLength);
+          } else {
+            // Old format: remove trailing zeros (fallback)
+            let lastNonZero = bytes.length - 1;
+            while (lastNonZero >= 0 && bytes[lastNonZero] === 0) {
+              lastNonZero--;
+            }
+            trimmedBytes = bytes.slice(0, lastNonZero + 1);
+            console.log(`[FILEcoin] Old format detected, removed padding by trailing zeros`);
+          }
+          
+          // Extract file data (after metadata)
           const fileData = trimmedBytes.slice(metadataBytes.length);
           const base64Content = Buffer.from(fileData).toString("base64");
           
@@ -156,10 +212,68 @@ export async function downloadFromFilecoin(pieceCid: string): Promise<{
       }
     }
   } catch (error) {
-    // Not JSON metadata, continue with text/binary detection
+    // Not JSON metadata, continue with length prefix check
   }
-
-  // Try to decode as text
+  
+  // Check if data starts with 4-byte length prefix (for text/binary without metadata)
+  if (bytes.length >= 4) {
+    try {
+      const lengthBuffer = Buffer.from(bytes.slice(0, 4));
+      const storedLength = lengthBuffer.readUInt32BE(0);
+      
+      // Sanity check: stored length should be reasonable (not larger than decrypted data)
+      if (storedLength > 0 && storedLength <= bytes.length && storedLength < bytes.length - 100) {
+        // Likely a length prefix - use it to extract exact data
+        originalDataLength = 4 + storedLength; // 4 bytes prefix + data
+        trimmedBytes = bytes.slice(0, originalDataLength);
+        hasLengthPrefix = true;
+        console.log(`[FILEcoin] Detected length prefix: ${storedLength} bytes (total with prefix: ${originalDataLength})`);
+        
+        // Extract data after length prefix
+        const actualData = trimmedBytes.slice(4);
+        
+        // Try to decode as text
+        try {
+          const decodedText = new TextDecoder().decode(actualData);
+          return {
+            pieceCid,
+            size: actualData.length,
+            format: "text",
+            content: decodedText,
+          };
+        } catch (error) {
+          // If it's not text, return as base64
+          const base64Content = Buffer.from(actualData).toString("base64");
+          return {
+            pieceCid,
+            size: actualData.length,
+            format: "binary",
+            content: base64Content,
+            message: "Content is binary, returned as base64. Decode to get original bytes.",
+          };
+        }
+      }
+    } catch (error) {
+      // Not a valid length prefix, continue with fallback
+    }
+  }
+  
+  // Fallback: Remove trailing zeros (for old format or if length detection failed)
+  if (!hasLengthPrefix) {
+    let lastNonZero = bytes.length - 1;
+    while (lastNonZero >= 0 && bytes[lastNonZero] === 0) {
+      lastNonZero--;
+    }
+    if (lastNonZero < bytes.length - 1) {
+      const paddingRemoved = bytes.length - (lastNonZero + 1);
+      console.log(`[FILEcoin] Fallback: Removed ${paddingRemoved} bytes of padding (trailing zeros)`);
+      trimmedBytes = bytes.slice(0, lastNonZero + 1);
+    } else {
+      trimmedBytes = bytes;
+    }
+  }
+  
+  // Try to decode as text (fallback)
   try {
     const decodedText = new TextDecoder().decode(trimmedBytes);
     return {
@@ -328,8 +442,12 @@ export async function uploadToFilecoin(
   
   let dataBytes: Uint8Array;
   
+  // Store original unpadded length for later padding removal
+  let originalUnpaddedLength: number;
+  
   // If it's a file (has filename), add metadata header
   if (options.filename && data instanceof Uint8Array) {
+    originalUnpaddedLength = data.length;
     const metadata: any = {
       type: "file",
       filename: options.filename,
@@ -339,38 +457,69 @@ export async function uploadToFilecoin(
         ? options.priceUSDC 
         : options.priceUSDC.toString(),
       payAddress: options.payAddress,
+      originalSize: data.length, // Store original file size (before metadata)
+      metadataSize: 0, // Will be set after encoding metadata
     };
     
     const metadataStr = JSON.stringify(metadata);
     const metadataBytes = new TextEncoder().encode(metadataStr);
     
+    // Update metadataSize in the JSON (we need to re-encode, but simpler: store total data size)
+    // Actually, we can calculate it: metadataSize = metadataBytes.length
+    // But we need the full data size including metadata. Let's store the total unpadded size.
+    const totalDataSize = metadataBytes.length + data.length;
+    
     // Combine metadata + file data
     dataBytes = new Uint8Array(metadataBytes.length + data.length);
     dataBytes.set(metadataBytes, 0);
     dataBytes.set(data, metadataBytes.length);
+    originalUnpaddedLength = totalDataSize; // Total size including metadata
   } else if (typeof data === "string") {
-    // It's a text message
-    dataBytes = new TextEncoder().encode(data);
+    // It's a text message - add 4-byte length prefix
+    const textBytes = new TextEncoder().encode(data);
+    originalUnpaddedLength = textBytes.length;
+    
+    // Prepend 4-byte length (big-endian) to the data
+    const lengthBuffer = Buffer.allocUnsafe(4);
+    lengthBuffer.writeUInt32BE(textBytes.length, 0);
+    
+    dataBytes = new Uint8Array(4 + textBytes.length);
+    dataBytes.set(new Uint8Array(lengthBuffer), 0);
+    dataBytes.set(textBytes, 4);
   } else {
-    // It's binary data without filename
-    dataBytes = data;
+    // It's binary data without filename - add 4-byte length prefix
+    originalUnpaddedLength = data.length;
+    
+    // Prepend 4-byte length (big-endian) to the data
+    const lengthBuffer = Buffer.allocUnsafe(4);
+    lengthBuffer.writeUInt32BE(data.length, 0);
+    
+    dataBytes = new Uint8Array(4 + data.length);
+    dataBytes.set(new Uint8Array(lengthBuffer), 0);
+    dataBytes.set(data, 4);
   }
   
-  // Encrypt the data first
-  const encryptedData = encryptData(dataBytes);
-  
-  // Filecoin requires minimum 127 bytes, pad if needed
+  // Filecoin requires minimum 127 bytes, pad PLAINTEXT data BEFORE encryption
+  // We store the original length so we can remove padding after decryption
   const MIN_SIZE = 127;
-  let paddedData = encryptedData;
+  let paddedPlaintext = dataBytes;
+  const wasPadded = dataBytes.length < MIN_SIZE;
   
-  if (encryptedData.length < MIN_SIZE) {
-    // Pad with null bytes (0x00)
-    paddedData = new Uint8Array(MIN_SIZE);
-    paddedData.set(encryptedData, 0);
+  if (wasPadded) {
+    // Pad plaintext with null bytes (0x00) BEFORE encryption
+    paddedPlaintext = new Uint8Array(MIN_SIZE);
+    paddedPlaintext.set(dataBytes, 0);
     // Rest is already zeros (default Uint8Array initialization)
+    console.log(`[UPLOAD] Padded plaintext from ${dataBytes.length} to ${MIN_SIZE} bytes before encryption (original size: ${originalUnpaddedLength})`);
+  } else {
+    console.log(`[UPLOAD] No padding needed (size: ${dataBytes.length} bytes, original: ${originalUnpaddedLength})`);
   }
   
-  const { pieceCid, size } = await synapse.storage.upload(paddedData);
+  // Encrypt the padded plaintext
+  const encryptedData = encryptData(paddedPlaintext);
+  console.log(`[UPLOAD] Encrypted data size: ${encryptedData.length} bytes (IV: ${IV_LENGTH}, AuthTag: ${AUTH_TAG_LENGTH}, Encrypted: ${encryptedData.length - IV_LENGTH - AUTH_TAG_LENGTH})`);
+  
+  const { pieceCid, size } = await synapse.storage.upload(encryptedData);
   return { pieceCid: pieceCid.toString(), size };
 }
 

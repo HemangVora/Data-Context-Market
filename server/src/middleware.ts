@@ -1,19 +1,7 @@
 import express, { Request, Response, NextFunction } from "express";
 import { paymentMiddleware, Resource, type SolanaAddress } from "x402-express";
-import { facilitatorUrl, payTo } from "./config.js";
-import { getFileSizeFromFilecoin } from "./services/filecoin.js";
-
-// Price per byte in dollars
-const PRICE_PER_BYTE = 0.0001;
-
-/**
- * Calculates price based on file size
- */
-function calculatePrice(sizeInBytes: number): string {
-  const totalPrice = sizeInBytes * PRICE_PER_BYTE;
-  // Format to 6 decimal places to handle very small amounts
-  return `$${totalPrice.toFixed(6)}`;
-}
+import { facilitatorUrl } from "./config.js";
+import { getDataFromContract } from "./services/contract.js";
 
 /**
  * Dynamic pricing middleware for /download endpoint
@@ -24,46 +12,92 @@ async function dynamicPricingMiddleware(
   res: Response,
   next: NextFunction,
 ): Promise<void> {
-  // Only apply to /download endpoint
-  if (req.path !== "/download" || req.method !== "GET") {
+  console.log(`[MIDDLEWARE] Incoming request: ${req.method} ${req.path}${req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : ''}`);
+  
+  // Only apply to /download endpoint (both /download and /download/:pieceCid)
+  const isDownloadPath = req.path === "/download" || req.path.startsWith("/download/");
+  console.log(`[MIDDLEWARE] Is download path: ${isDownloadPath}, method: ${req.method}`);
+  
+  if (!isDownloadPath || req.method !== "GET") {
+    console.log(`[MIDDLEWARE] Skipping - not a download request`);
     return next();
   }
 
-  const pieceCid = req.query.pieceCid as string;
+  // Extract pieceCid from path parameter or query parameter
+  // For path params like /download/:pieceCid, we need to extract from the path string
+  // since req.params isn't populated until after route matching
+  let pieceCid: string | undefined;
+  
+  if (req.path.startsWith("/download/")) {
+    // Extract from path: /download/bafkzcibcaabai3vffxbbuatysolo6sfd23ffr3e5r5t4wbccfootkd2pi6uyupi
+    const pathParts = req.path.split("/");
+    if (pathParts.length >= 3) {
+      pieceCid = pathParts[2]; // Get the pieceCid from the path
+    }
+  } else {
+    // Extract from query parameter: /download?pieceCid=...
+    pieceCid = req.query.pieceCid as string;
+  }
+  
   if (!pieceCid) {
     // Let the route handler deal with missing pieceCid
     return next();
   }
 
   console.log(`[DYNAMIC_PRICING] ========================================`);
-  console.log(`[DYNAMIC_PRICING] Starting pricing calculation for PieceCID: ${pieceCid}`);
+  console.log(`[DYNAMIC_PRICING] Starting payment middleware setup for PieceCID: ${pieceCid}`);
   console.log(`[DYNAMIC_PRICING] Request URL: ${req.protocol}://${req.headers.host}${req.path}${req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : ''}`);
 
   try {
-    // Fetch file size (this is free - just metadata)
-    console.log(`[DYNAMIC_PRICING] Fetching file size from Filecoin...`);
-    const fileSize = await getFileSizeFromFilecoin(pieceCid);
-    console.log(`[DYNAMIC_PRICING] ✓ File size fetched: ${fileSize} bytes`);
+    // First, check the contract for registered data - REQUIRED
+    console.log(`[DYNAMIC_PRICING] Checking contract registry for PieceCID...`);
+    const contractData = await getDataFromContract(pieceCid);
     
-    // Calculate dynamic price
-    const dynamicPrice = calculatePrice(fileSize);
-    console.log(`[DYNAMIC_PRICING] ✓ Calculated price: ${dynamicPrice} (${fileSize} bytes × $${PRICE_PER_BYTE}/byte)`);
+    if (!contractData) {
+      console.log(`[DYNAMIC_PRICING] ✗ PieceCID not found in contract registry`);
+      res.status(404).json({
+        error: "PieceCID not registered",
+        message: `The PieceCID "${pieceCid}" is not registered in the DataBoxRegistry contract. Please register it first before downloading.`,
+        pieceCid: pieceCid,
+      });
+      return;
+    }
+    
+    // Use price and payAddress from contract
+    // Convert priceUSDC (6 decimals) to USD format for x402
+    const priceInUSD = Number(contractData.priceUSDC) / 1_000_000;
+    const dynamicPrice = `$${priceInUSD.toFixed(6)}`;
+    const contractPayAddress = contractData.payAddress;
+    
+    console.log(`[DYNAMIC_PRICING] ✓ Found in contract registry:`);
+    console.log(`[DYNAMIC_PRICING]   - Name: ${contractData.name}`);
+    console.log(`[DYNAMIC_PRICING]   - Description: ${contractData.description}`);
+    console.log(`[DYNAMIC_PRICING]   - Filetype: ${contractData.filetype}`);
+    console.log(`[DYNAMIC_PRICING]   - Price from contract: ${dynamicPrice} (${contractData.priceUSDC} microUSDC)`);
+    console.log(`[DYNAMIC_PRICING]   - Pay Address from contract: ${contractPayAddress}`);
     
     // Store in request for potential use
     (req as any).dynamicPrice = dynamicPrice;
-    (req as any).fileSize = fileSize;
+    (req as any).contractData = contractData;
 
-    // Create x402 middleware dynamically with calculated price
+    // Use payAddress from contract
+    const finalPayTo = contractPayAddress;
+    
+    // Create x402 middleware dynamically with price from contract
     console.log(`[DYNAMIC_PRICING] Creating x402 payment middleware...`);
-    console.log(`[DYNAMIC_PRICING]   - Price: ${dynamicPrice}`);
+    console.log(`[DYNAMIC_PRICING]   - Price: ${dynamicPrice} (from contract)`);
     console.log(`[DYNAMIC_PRICING]   - Network: base-sepolia`);
-    console.log(`[DYNAMIC_PRICING]   - Pay to: ${payTo}`);
+    console.log(`[DYNAMIC_PRICING]   - Pay to: ${finalPayTo} (from contract)`);
     console.log(`[DYNAMIC_PRICING]   - Facilitator: ${facilitatorUrl}`);
     
     const dynamicPaymentMiddleware = paymentMiddleware(
-      payTo,
+      finalPayTo as `0x${string}` | SolanaAddress,
       {
         "GET /download": {
+          price: dynamicPrice,
+          network: "base-sepolia",
+        },
+        "GET /download/*": {
           price: dynamicPrice,
           network: "base-sepolia",
         },

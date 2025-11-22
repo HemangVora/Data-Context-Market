@@ -1,5 +1,5 @@
 {
-  "address": "0x5b0b1cbF40C910f58B8Ff1d48A629f257a556B99",
+  "address": "0x64bdF0319687859f99A49f57dbAF0511b9B0e545",
   "abi": [
     {
       "anonymous": false,
@@ -155,3 +155,4 @@
     }
   ]
 }
+

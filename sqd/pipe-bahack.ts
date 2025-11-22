@@ -14,8 +14,9 @@ const CONFIG = {
   CLICKHOUSE_PASSWORD: process.env.CLICKHOUSE_PASSWORD || "password",
 };
 
-// Event signature: DataUploaded(string,string,uint256,string,uint256)
-const DATA_UPLOADED_TOPIC = keccak256(toBytes("DataUploaded(string,string,uint256,string,uint256)"));
+// Event signature: DataUploaded(string,string,string,string,uint256,string,uint256)
+// Order: pieceCid, name, description, filetype, priceUSDC, payAddress, timestamp
+const DATA_UPLOADED_TOPIC = keccak256(toBytes("DataUploaded(string,string,string,string,uint256,string,uint256)"));
 
 async function main() {
   console.log('DataUploaded event signature:', DATA_UPLOADED_TOPIC);
@@ -42,8 +43,10 @@ async function main() {
         const events: Array<{
           block_number: number;
           timestamp: number;
-          text_id: string;
+          piece_cid: string;
+          name: string;
           description: string;
+          filetype: string;
           price_usdc: string;
           pay_address: string;
           tx_hash: string;
@@ -53,10 +56,13 @@ async function main() {
           for (const log of block.logs) {
             try {
               // Decode the event data (all fields are non-indexed)
+              // Order: pieceCid, name, description, filetype, priceUSDC, payAddress, timestamp
               const decoded = decodeAbiParameters(
                 [
-                  { name: 'Id', type: 'string' },
+                  { name: 'pieceCid', type: 'string' },
+                  { name: 'name', type: 'string' },
                   { name: 'description', type: 'string' },
+                  { name: 'filetype', type: 'string' },
                   { name: 'priceUSDC', type: 'uint256' },
                   { name: 'payAddress', type: 'string' },
                   { name: 'timestamp', type: 'uint256' },
@@ -67,10 +73,12 @@ async function main() {
               events.push({
                 block_number: block.header.number,
                 timestamp: block.header.timestamp,
-                text_id: decoded[0] as string,
-                description: decoded[1] as string,
-                price_usdc: (decoded[2] as bigint).toString(),
-                pay_address: decoded[3] as string,
+                piece_cid: decoded[0] as string,
+                name: decoded[1] as string,
+                description: decoded[2] as string,
+                filetype: decoded[3] as string,
+                price_usdc: (decoded[4] as bigint).toString(),
+                pay_address: decoded[5] as string,
                 tx_hash: log.transactionHash,
               });
             } catch (e) {
@@ -95,14 +103,16 @@ async function main() {
               CREATE TABLE IF NOT EXISTS bahack_events (
                 block_number  UInt64,
                 timestamp     UInt64,
-                text_id       String,
+                piece_cid     String,
+                name          String,
                 description   String,
+                filetype      String,
                 price_usdc    String,
                 pay_address   String,
                 tx_hash       String
               )
               ENGINE = ReplacingMergeTree()
-              ORDER BY (block_number, tx_hash, text_id)
+              ORDER BY (block_number, tx_hash, piece_cid)
             `,
           });
           console.log('Table bahack_events created/verified');
