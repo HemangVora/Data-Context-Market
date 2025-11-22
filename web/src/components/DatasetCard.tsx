@@ -1,10 +1,11 @@
 import { ExternalLink, HardDrive, Tag } from "lucide-react";
 import { PurchaseDatasetButton } from "./PurchaseDatasetButton";
+import { DownloadDatasetButton } from "./DownloadDatasetButton";
 
 interface DatasetCardProps {
   title: string;
   description: string;
-  price: string;
+  price: number;
   format: string;
   size: string;
   author: string;
@@ -61,14 +62,14 @@ export function DatasetCard({
 
       {/* Actions and Tech Specs */}
       <div className="mt-auto space-y-4">
-        {/* Purchase Button */}
-        {payAddress && (
+        {/* Download Button with x402 Payment */}
+        {pieceCid && (
           <div className="w-full">
-            <PurchaseDatasetButton
+            <DownloadDatasetButton
+              pieceCid={pieceCid}
               datasetName={title}
-              priceUSDC={price}
-              payAddress={payAddress}
-              onPurchaseSuccess={handlePurchaseSuccess}
+              price={price}
+              onDownloadSuccess={handlePurchaseSuccess}
             />
           </div>
         )}

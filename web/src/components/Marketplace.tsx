@@ -45,6 +45,8 @@ export function Marketplace() {
               )}...${event.pay_address.slice(-4)}`,
               tags: ["Dataset", "Verified"],
               txHash: event.tx_hash,
+              pieceCid: event.piece_cid,
+              payAddress: event.pay_address,
             })
           );
           setDatasets(transformedDatasets);
