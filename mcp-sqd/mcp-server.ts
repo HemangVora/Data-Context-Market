@@ -304,8 +304,8 @@ async function main() {
                 topic2        String,
                 topic3        String
               )
-              ENGINE = MergeTree
-              ORDER BY block_number
+              ENGINE = ReplacingMergeTree()
+              ORDER BY (block_number, log_index)
             \`,
           });
           console.log(\`Created table \${CONFIG.TABLE_NAME}\`);
@@ -480,12 +480,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const {
           contractAddress,
           network = "mainnet",
-          tableName,
+          tableName: baseTableName,
           fromBlock = 0,
-          outputFile,
+          outputFile: baseOutputFile,
           events: eventFilter,
           customEvents,
         } = args as any;
+
+        // Add timestamp to avoid conflicts with existing pipes
+        const timestamp = Date.now();
+        const tableName = `${baseTableName}_${timestamp}`;
+        const outputFile = baseOutputFile.replace('.ts', `_${timestamp}.ts`);
 
         let events: any[] = [];
 
@@ -547,12 +552,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const outputDir = path.join(__dirname, 'output');
         const csvPath = path.join(outputDir, `${tableName}.csv`);
         const csvUrl = `file://${csvPath}`;
+        const pipeUrl = `file://${outputPath}`;
 
         return {
           content: [
             {
               type: "text",
-              text: `Successfully generated pipe at ${outputPath}\n\nEvents indexed: ${eventList}\n\nOutput will be saved to:\n- CSV: ${csvPath}\n- URL: ${csvUrl}\n- ClickHouse table: ${tableName}\n\nTo run: use run_pipe tool with pipeFile="${outputFile}"`,
+              text: `Successfully generated pipe at ${outputPath}\n- Pipe URL: ${pipeUrl}\n\nEvents indexed: ${eventList}\n\nOutput will be saved to:\n- CSV: ${csvPath}\n- CSV URL: ${csvUrl}\n- ClickHouse table: ${tableName}\n\nTo run: use run_pipe tool with pipeFile="${outputFile}"`,
             },
           ],
         };
@@ -633,12 +639,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const outputDir = path.join(__dirname, 'output');
         const csvPath = path.join(outputDir, `${tableName}.csv`);
         const csvUrl = `file://${csvPath}`;
+        const pipeUrl = `file://${pipePath}`;
 
         return {
           content: [
             {
               type: "text",
-              text: `Started pipe ${pipeFile} (PID: ${child.pid})\n\nClickHouse container started automatically.\n\nOutput files:\n- CSV: ${csvPath}\n- URL: ${csvUrl}\n- ClickHouse table: ${tableName}\n\nInitial output:\n${output || "(waiting for output...)"}`,
+              text: `Started pipe ${pipeFile} (PID: ${child.pid})\n- Pipe: ${pipePath}\n- Pipe URL: ${pipeUrl}\n\nClickHouse container started automatically.\n\nOutput files:\n- CSV: ${csvPath}\n- CSV URL: ${csvUrl}\n- ClickHouse table: ${tableName}\n\nInitial output:\n${output || "(waiting for output...)"}`,
             },
           ],
         };
