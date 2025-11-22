@@ -65,7 +65,7 @@ server.tool(
 // Add tool to upload content to Filecoin
 server.tool(
   "upload-to-filecoin",
-  "Upload a message, file, or URL to Filecoin storage. Returns the PieceCID that can be used to download the content later. For files, provide base64-encoded data. For URLs, provide a publicly accessible URL and the server will download, encrypt, and upload the file automatically. IMPORTANT: You MUST ask the user for the required payment metadata fields (description, priceUSDC, payAddress) - do NOT infer or guess these values. Always prompt the user explicitly for each required field before calling this tool.",
+  "Upload a message, file, or URL to Filecoin storage. Returns the PieceCID that can be used to download the content later. For files, provide base64-encoded data. For URLs, provide a publicly accessible URL and the server will download, encrypt, and upload the file automatically. IMPORTANT: You MUST ask the user for the required payment metadata fields (description, priceUSD, payAddress) - do NOT infer or guess these values. Always prompt the user explicitly for each required field before calling this tool. The priceUSD will be automatically converted to the correct format internally.",
   {
     message: z.string().optional().describe("Text message to upload to Filecoin"),
     file: z.string().optional().describe("Base64-encoded file data to upload"),
@@ -73,7 +73,7 @@ server.tool(
     mimeType: z.string().optional().describe("MIME type of the file (e.g., 'application/pdf', 'image/png')"),
     url: z.string().url().optional().describe("URL of a publicly accessible file to download and upload to Filecoin. The server will automatically detect filename and MIME type from the URL or response headers."),
     description: z.string().describe("REQUIRED: Description of what the file/data is. You MUST ask the user for this value - do not infer it. Ask: 'What is a description of this file/data?'"),
-    priceUSDC: z.union([z.string(), z.number()]).describe("REQUIRED: Price in USDC with 6 decimals (e.g., '1000000' for 1 USDC, or 1000000 as number). You MUST ask the user for this value - do not infer or guess. Ask: 'What price in USDC should this be? (e.g., 1000000 for 1 USDC)'"),
+    priceUSD: z.union([z.string(), z.number()]).describe("REQUIRED: Price in USD as a decimal number (e.g., 0.01 for $0.01, 1.5 for $1.50, or '0.01' as string). You can also accept formats like '$0.01'. You MUST ask the user for this value - do not infer or guess. Ask: 'What price in USD should this be? (e.g., 0.01 for $0.01)'"),
     payAddress: z.string().describe("REQUIRED: Address to receive payments (0x... for EVM or Solana address). You MUST ask the user for this value - do not infer it. Ask: 'What address should receive payments for this? (0x... for EVM or Solana address)'"),
   },
   async (args: { 
@@ -83,21 +83,44 @@ server.tool(
     mimeType?: string; 
     url?: string;
     description: string;
-    priceUSDC: string | number;
+    priceUSD: string | number;
     payAddress: string;
   }) => {
     try {
-      const { message, file, filename, mimeType, url, description, priceUSDC, payAddress } = args;
+      const { message, file, filename, mimeType, url, description, priceUSD, payAddress } = args;
       
       // Validate required fields
       if (!description) {
         throw new Error("description is required");
       }
-      if (priceUSDC === undefined || priceUSDC === null) {
-        throw new Error("priceUSDC is required (price in USDC with 6 decimals, e.g., '1000000' for 1 USDC)");
+      if (priceUSD === undefined || priceUSD === null) {
+        throw new Error("priceUSD is required (price in USD, e.g., 0.01 for $0.01)");
       }
       if (!payAddress) {
         throw new Error("payAddress is required (address to receive payments, 0x... for EVM or Solana address)");
+      }
+      
+      // Convert priceUSD to priceUSDC (6 decimals)
+      // Accept formats like: 0.01, "0.01", "$0.01", 1.5, etc.
+      let priceUSDC: string;
+      try {
+        let priceValue: number;
+        if (typeof priceUSD === "string") {
+          // Remove $ sign if present and trim whitespace
+          const cleaned = priceUSD.replace(/^\$/, "").trim();
+          priceValue = parseFloat(cleaned);
+          if (isNaN(priceValue)) {
+            throw new Error(`Invalid price format: ${priceUSD}. Expected a number like 0.01 or "$0.01"`);
+          }
+        } else {
+          priceValue = priceUSD;
+        }
+        
+        // Convert to 6 decimals: multiply by 1,000,000
+        const priceInMicroUSDC = Math.round(priceValue * 1_000_000);
+        priceUSDC = priceInMicroUSDC.toString();
+      } catch (error: any) {
+        throw new Error(`Invalid price format: ${priceUSD}. ${error.message || "Expected a number like 0.01 or '$0.01'"}`);
       }
       
       if (!message && !file && !url) {
@@ -130,9 +153,9 @@ server.tool(
         }
       }
       
-      // Add required payment metadata
+      // Add required payment metadata (convert priceUSD to priceUSDC)
       payload.description = description;
-      payload.priceUSDC = priceUSDC;
+      payload.priceUSDC = priceUSDC; // Already converted to 6 decimals
       payload.payAddress = payAddress;
 
       const res = await client.post("/upload", payload);
