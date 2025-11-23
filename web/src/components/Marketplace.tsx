@@ -38,7 +38,7 @@ export function Marketplace() {
               description: event.description,
               price: parseInt(event.price_usdc) / 1_000_000, // Convert USDC (6 decimals) to readable format
               format: event.filetype || "Unknown",
-              size: "On-chain",
+              size: "Filecoin",
               author: `${event.pay_address.slice(
                 0,
                 6

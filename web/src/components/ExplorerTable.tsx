@@ -85,7 +85,7 @@ export function ExplorerTable() {
                 description: event.description,
                 price: parseInt(event.price_usdc) / 1_000_000,
                 format: event.filetype || "Unknown",
-                size: "On-chain",
+                size: "Filecoin",
                 author: event.pay_address,
                 tags: ["Dataset", "Verified"],
                 txHash: event.tx_hash,
