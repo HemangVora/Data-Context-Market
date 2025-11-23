@@ -12,21 +12,16 @@ export function Navbar() {
           <div className="p-1.5 rounded-lg bg-linear-to-br from-indigo-500 to-purple-500">
             <BrainCircuit className="w-6 h-6 text-white" />
           </div>
-          {/* <span className="bg-clip-text text-transparent bg-linear-to-r from-white to-gray-400">
-            DataNexus
-          </span> */}
+          <span className="bg-clip-text text-transparent bg-linear-to-r from-white to-gray-400">
+            DCM
+          </span>
         </Link>
 
         <div className="hidden md:flex items-start w-[80%] ml-5 gap-8 text-sm font-medium text-gray-400">
           <Link href="/" className="hover:text-white transition-colors">
             Home
           </Link>
-          <Link
-            href="#marketplace"
-            className="hover:text-white transition-colors"
-          >
-            Marketplace
-          </Link>
+
           <Link
             href="/dashboard"
             className="hover:text-white transition-colors"

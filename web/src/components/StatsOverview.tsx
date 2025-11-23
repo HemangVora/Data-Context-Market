@@ -272,6 +272,13 @@ export function StatsOverview() {
       Other: number;
     }>
   >(INITIAL_DATASET_CHART_DATA);
+  const [tagCounts, setTagCounts] = useState({
+    AI: 0,
+    Finance: 0,
+    Healthcare: 0,
+    Research: 0,
+    Other: 0,
+  });
 
   useEffect(() => {
     // Fetch real data from API endpoints
@@ -350,6 +357,15 @@ export function StatsOverview() {
             };
           } = {};
 
+          // Initialize total tag counts
+          const totalTagCounts = {
+            AI: 0,
+            Finance: 0,
+            Healthcare: 0,
+            Research: 0,
+            Other: 0,
+          };
+
           // Process each event and categorize by tag
           eventsData.events.forEach((event: DatasetEvent) => {
             const tag = getDatasetTag(event.name, event.description);
@@ -372,14 +388,29 @@ export function StatsOverview() {
             }
 
             // Increment the count for this tag
-            if (tag === "AI") tagCountsByDate[dateKey].AI++;
-            else if (tag === "Finance") tagCountsByDate[dateKey].Finance++;
-            else if (tag === "Healthcare")
+            if (tag === "AI") {
+              tagCountsByDate[dateKey].AI++;
+              totalTagCounts.AI++;
+            } else if (tag === "Finance") {
+              tagCountsByDate[dateKey].Finance++;
+              totalTagCounts.Finance++;
+            } else if (tag === "Healthcare") {
               tagCountsByDate[dateKey].Healthcare++;
-            else if (tag === "Research") tagCountsByDate[dateKey].Research++;
-            else if (tag === "Social") tagCountsByDate[dateKey].Other++;
-            else tagCountsByDate[dateKey].Other++;
+              totalTagCounts.Healthcare++;
+            } else if (tag === "Research") {
+              tagCountsByDate[dateKey].Research++;
+              totalTagCounts.Research++;
+            } else if (tag === "Social") {
+              tagCountsByDate[dateKey].Other++;
+              totalTagCounts.Other++;
+            } else {
+              tagCountsByDate[dateKey].Other++;
+              totalTagCounts.Other++;
+            }
           });
+
+          // Update tag counts state
+          setTagCounts(totalTagCounts);
 
           // Convert to array and sort by date
           const chartData = Object.entries(tagCountsByDate)
@@ -566,20 +597,35 @@ export function StatsOverview() {
               <Database className="w-5 h-5" />
             </div>
           </div>
-          <div className="flex items-center gap-4 text-sm z-10">
-            <div className="flex items-center gap-1.5 text-emerald-400 bg-emerald-400/10 px-2 py-1 rounded-md">
-              <Bot className="w-3.5 h-3.5" />
+          <div className="flex items-center gap-2 text-xs z-10 flex-wrap">
+            <div className="flex items-center gap-1 text-purple-400 bg-purple-400/10 px-2 py-1 rounded-md">
+              <div className="w-1.5 h-1.5 rounded-full bg-purple-500" />
               <span className="font-medium">
-                <CountUp end={Math.floor(totalDatasets * 0.65)} suffix=" AI" />
+                AI: <CountUp end={tagCounts.AI} />
               </span>
             </div>
-            <div className="flex items-center gap-1.5 text-blue-400 bg-blue-400/10 px-2 py-1 rounded-md">
-              <User className="w-3.5 h-3.5" />
+            <div className="flex items-center gap-1 text-emerald-400 bg-emerald-400/10 px-2 py-1 rounded-md">
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
               <span className="font-medium">
-                <CountUp
-                  end={Math.floor(totalDatasets * 0.35)}
-                  suffix=" Human"
-                />
+                Finance: <CountUp end={tagCounts.Finance} />
+              </span>
+            </div>
+            <div className="flex items-center gap-1 text-amber-400 bg-amber-400/10 px-2 py-1 rounded-md">
+              <div className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+              <span className="font-medium">
+                Healthcare: <CountUp end={tagCounts.Healthcare} />
+              </span>
+            </div>
+            <div className="flex items-center gap-1 text-blue-400 bg-blue-400/10 px-2 py-1 rounded-md">
+              <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+              <span className="font-medium">
+                Research: <CountUp end={tagCounts.Research} />
+              </span>
+            </div>
+            <div className="flex items-center gap-1 text-gray-400 bg-gray-400/10 px-2 py-1 rounded-md">
+              <div className="w-1.5 h-1.5 rounded-full bg-gray-500" />
+              <span className="font-medium">
+                Other: <CountUp end={tagCounts.Other} />
               </span>
             </div>
           </div>
