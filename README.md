@@ -6,6 +6,12 @@
   A decentralized marketplace for buying and selling data leveraging Filecoin storage, blockchain indexing with SQD, x402 micropayments and easy onboarding with CDP embedded wallets.
 </div>
 
+## 📝 Deployed Contract
+
+| Contract | Network | Address |
+|----------|---------|---------|
+| DataContextMarketRegistry | Sepolia | [`0xCf21Ea754cd160430565970314916D121b15726D`](https://sepolia.etherscan.io/address/0xcf21ea754cd160430565970314916d121b15726d) |
+
 ---
 
 ## Technology Stack
