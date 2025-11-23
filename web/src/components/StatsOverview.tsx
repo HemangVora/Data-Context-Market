@@ -163,14 +163,44 @@ const MOCK_CONTRIBUTORS: TopContributor[] = [
   },
 ];
 
-const CHART_DATA = [
-  { date: "30.10", value1: 4000, value2: 2400, value3: 2400 },
-  { date: "31.10", value1: 3000, value2: 1398, value3: 2210 },
-  { date: "01.11", value1: 2000, value2: 9800, value3: 2290 },
-  { date: "02.11", value1: 2780, value2: 3908, value3: 2000 },
-  { date: "03.11", value1: 1890, value2: 4800, value3: 2181 },
-  { date: "04.11", value1: 2390, value2: 3800, value3: 2500 },
-  { date: "05.11", value1: 3490, value2: 4300, value3: 2100 },
+// Dataset tag mapping based on keywords
+const getDatasetTag = (name: string, description: string = ""): string => {
+  const text = `${name} ${description}`.toLowerCase();
+
+  if (
+    text.match(
+      /ai|artificial intelligence|machine learning|ml|neural|deep learning|model/
+    )
+  ) {
+    return "AI";
+  }
+  if (
+    text.match(
+      /finance|financial|stock|market|trading|investment|bank|crypto|blockchain|bitcoin|ethereum|defi/
+    )
+  ) {
+    return "Finance";
+  }
+  if (
+    text.match(
+      /healthcare|health|medical|hospital|patient|disease|drug|clinical/
+    )
+  ) {
+    return "Healthcare";
+  }
+  if (text.match(/research|science|academic|study|analysis|data/)) {
+    return "Research";
+  }
+  if (text.match(/social|media|twitter|facebook|instagram|sentiment/)) {
+    return "Social";
+  }
+
+  return "Other";
+};
+
+// This will be populated with real data
+const INITIAL_DATASET_CHART_DATA = [
+  { date: "Loading", AI: 0, Finance: 0, Healthcare: 0, Research: 0, Other: 0 },
 ];
 
 // CountUp Component
@@ -232,6 +262,16 @@ export function StatsOverview() {
   const [totalDatasets, setTotalDatasets] = useState(0);
   const [totalDownloads, setTotalDownloads] = useState(0);
   const [totalDatasetValue, setTotalDatasetValue] = useState(0);
+  const [datasetChartData, setDatasetChartData] = useState<
+    Array<{
+      date: string;
+      AI: number;
+      Finance: number;
+      Healthcare: number;
+      Research: number;
+      Other: number;
+    }>
+  >(INITIAL_DATASET_CHART_DATA);
 
   useEffect(() => {
     // Fetch real data from API endpoints
@@ -297,6 +337,91 @@ export function StatsOverview() {
         setTotalDatasets(datasetCount);
         setTotalDownloads(downloadCount);
         setTotalDatasetValue(totalValue);
+
+        // Generate chart data from real events
+        if (eventsData.success && eventsData.events) {
+          const tagCountsByDate: {
+            [date: string]: {
+              AI: number;
+              Finance: number;
+              Healthcare: number;
+              Research: number;
+              Other: number;
+            };
+          } = {};
+
+          // Process each event and categorize by tag
+          eventsData.events.forEach((event: DatasetEvent) => {
+            const tag = getDatasetTag(event.name, event.description);
+            const eventDate = new Date(event.timestamp * 1000);
+            const dateKey = `${eventDate
+              .getDate()
+              .toString()
+              .padStart(2, "0")}.${(eventDate.getMonth() + 1)
+              .toString()
+              .padStart(2, "0")}`;
+
+            if (!tagCountsByDate[dateKey]) {
+              tagCountsByDate[dateKey] = {
+                AI: 0,
+                Finance: 0,
+                Healthcare: 0,
+                Research: 0,
+                Other: 0,
+              };
+            }
+
+            // Increment the count for this tag
+            if (tag === "AI") tagCountsByDate[dateKey].AI++;
+            else if (tag === "Finance") tagCountsByDate[dateKey].Finance++;
+            else if (tag === "Healthcare")
+              tagCountsByDate[dateKey].Healthcare++;
+            else if (tag === "Research") tagCountsByDate[dateKey].Research++;
+            else if (tag === "Social") tagCountsByDate[dateKey].Other++;
+            else tagCountsByDate[dateKey].Other++;
+          });
+
+          // Convert to array and sort by date
+          const chartData = Object.entries(tagCountsByDate)
+            .map(([date, counts]) => ({
+              date,
+              ...counts,
+            }))
+            .sort((a, b) => {
+              const [dayA, monthA] = a.date.split(".").map(Number);
+              const [dayB, monthB] = b.date.split(".").map(Number);
+              if (monthA !== monthB) return monthA - monthB;
+              return dayA - dayB;
+            });
+
+          // Make counts cumulative
+          const cumulativeData = chartData.reduce((acc, curr, index) => {
+            if (index === 0) {
+              acc.push(curr);
+            } else {
+              const prev = acc[index - 1];
+              acc.push({
+                date: curr.date,
+                AI: prev.AI + curr.AI,
+                Finance: prev.Finance + curr.Finance,
+                Healthcare: prev.Healthcare + curr.Healthcare,
+                Research: prev.Research + curr.Research,
+                Other: prev.Other + curr.Other,
+              });
+            }
+            return acc;
+          }, [] as typeof chartData);
+
+          // Take last 7 days or all if less
+          const finalChartData =
+            cumulativeData.length > 7
+              ? cumulativeData.slice(-7)
+              : cumulativeData;
+
+          if (finalChartData.length > 0) {
+            setDatasetChartData(finalChartData);
+          }
+        }
 
         // Sort by timestamp (newest first) - assuming timestamp is in seconds
         combinedActivities.sort((a, b) => {
@@ -642,42 +767,69 @@ export function StatsOverview() {
           </div>
         </div>
 
-        {/* Right Column - Revenue Chart (Compact) */}
+        {/* Right Column - Dataset Count by Tag Chart */}
         <div className="lg:col-span-3 bg-[#111119] border border-white/5 rounded-2xl p-6 h-[424px] flex flex-col relative overflow-hidden group">
           <div className="flex items-start justify-between mb-2 z-10">
             <div>
               <p className="text-neutral-400 text-sm font-medium mb-1">
-                Total Revenue
+                Total Datasets by Category
               </p>
               <h2 className="text-3xl font-bold text-white tracking-tight">
-                <CountUp end={61834.7} prefix="$" decimals={2} />
+                <CountUp end={totalDatasets} suffix=" Datasets" />
               </h2>
             </div>
             <div className="flex items-center gap-1 text-xs font-medium text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded-full border border-emerald-500/20">
               <TrendingUp className="w-3 h-3" />
-              +24.5%
+              Growing
             </div>
           </div>
 
           <div className="flex-1 w-full -ml-4 mt-4 relative z-0">
             {/* Floating Badge */}
-            <div className="absolute top-10 right-10 z-20 bg-lime-400 text-black px-2 py-1 rounded-full font-bold text-xs shadow-lg shadow-lime-400/20 transform rotate-3">
-              <CountUp end={24185.5} prefix="$" decimals={2} />
+            <div className="absolute top-10 right-10 z-20 bg-purple-500 text-white px-2 py-1 rounded-full font-bold text-xs shadow-lg shadow-purple-500/20 transform rotate-3">
+              AI:{" "}
+              <CountUp
+                end={
+                  datasetChartData.length > 0
+                    ? datasetChartData[datasetChartData.length - 1].AI
+                    : 0
+                }
+              />
             </div>
             <ResponsiveContainer width="115%" height="100%">
-              <AreaChart data={CHART_DATA}>
+              <AreaChart data={datasetChartData}>
                 <defs>
-                  <linearGradient id="colorValue1" x1="0" y1="0" x2="0" y2="1">
+                  <linearGradient id="colorAI" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3} />
                     <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
                   </linearGradient>
-                  <linearGradient id="colorValue2" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#a3e635" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#a3e635" stopOpacity={0} />
+                  <linearGradient id="colorFinance" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
                   </linearGradient>
-                  <linearGradient id="colorValue3" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                  <linearGradient
+                    id="colorHealthcare"
+                    x1="0"
+                    y1="0"
+                    x2="0"
+                    y2="1"
+                  >
+                    <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
+                  </linearGradient>
+                  <linearGradient
+                    id="colorResearch"
+                    x1="0"
+                    y1="0"
+                    x2="0"
+                    y2="1"
+                  >
+                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                  </linearGradient>
+                  <linearGradient id="colorOther" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#6b7280" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#6b7280" stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <XAxis
@@ -687,7 +839,6 @@ export function StatsOverview() {
                   tick={{ fill: "#525252", fontSize: 10 }}
                   dy={10}
                 />
-                {/* YAxis removed as requested */}
                 <Tooltip
                   contentStyle={{
                     backgroundColor: "#1A1A24",
@@ -698,27 +849,48 @@ export function StatsOverview() {
                 />
                 <Area
                   type="monotone"
-                  dataKey="value1"
+                  dataKey="AI"
                   stroke="#8b5cf6"
                   strokeWidth={2}
                   fillOpacity={1}
-                  fill="url(#colorValue1)"
+                  fill="url(#colorAI)"
+                  name="AI"
                 />
                 <Area
                   type="monotone"
-                  dataKey="value2"
-                  stroke="#a3e635"
+                  dataKey="Finance"
+                  stroke="#10b981"
                   strokeWidth={2}
                   fillOpacity={1}
-                  fill="url(#colorValue2)"
+                  fill="url(#colorFinance)"
+                  name="Finance"
                 />
                 <Area
                   type="monotone"
-                  dataKey="value3"
-                  stroke="#6366f1"
+                  dataKey="Healthcare"
+                  stroke="#f59e0b"
                   strokeWidth={2}
                   fillOpacity={1}
-                  fill="url(#colorValue3)"
+                  fill="url(#colorHealthcare)"
+                  name="Healthcare"
+                />
+                <Area
+                  type="monotone"
+                  dataKey="Research"
+                  stroke="#3b82f6"
+                  strokeWidth={2}
+                  fillOpacity={1}
+                  fill="url(#colorResearch)"
+                  name="Research"
+                />
+                <Area
+                  type="monotone"
+                  dataKey="Other"
+                  stroke="#6b7280"
+                  strokeWidth={2}
+                  fillOpacity={1}
+                  fill="url(#colorOther)"
+                  name="Other"
                 />
               </AreaChart>
             </ResponsiveContainer>
@@ -727,16 +899,24 @@ export function StatsOverview() {
           {/* Compact Legend */}
           <div className="flex items-center justify-between pt-4 border-t border-white/5 mt-2 z-10">
             <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-indigo-500" />
+              <div className="w-2 h-2 rounded-full bg-purple-500" />
               <span className="text-xs text-neutral-400">AI</span>
             </div>
             <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-lime-400" />
-              <span className="text-xs text-neutral-400">Human</span>
+              <div className="w-2 h-2 rounded-full bg-emerald-500" />
+              <span className="text-xs text-neutral-400">Finance</span>
             </div>
             <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-purple-500" />
-              <span className="text-xs text-neutral-400">Subs</span>
+              <div className="w-2 h-2 rounded-full bg-amber-500" />
+              <span className="text-xs text-neutral-400">Healthcare</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-blue-500" />
+              <span className="text-xs text-neutral-400">Research</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-gray-500" />
+              <span className="text-xs text-neutral-400">Other</span>
             </div>
           </div>
         </div>
