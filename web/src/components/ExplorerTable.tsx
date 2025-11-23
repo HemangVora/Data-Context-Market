@@ -321,7 +321,7 @@ export function ExplorerTable() {
                       {dataset.size}
                     </td>
                     <td className="px-6 py-5 font-mono text-neutral-200 text-sm font-medium">
-                      {dataset.price.toFixed(2)}
+                      ${dataset.price.toFixed(2)}
                     </td>
                     <td className="px-6 py-5">
                       <span

@@ -1,6 +1,7 @@
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
 import { ExplorerTable } from "@/components/ExplorerTable";
+import { RecentDownloadsTable } from "@/components/RecentDownloadsTable";
 import { StatsOverview } from "@/components/StatsOverview";
 import { Search } from "lucide-react";
 
@@ -17,8 +18,13 @@ export default function Home() {
         <StatsOverview />
 
         {/* Top Datasets Table */}
-        <div className="space-y-6">
+        <div className="space-y-6 mb-12">
           <ExplorerTable />
+        </div>
+
+        {/* Recent Downloads Table */}
+        <div className="space-y-6">
+          <RecentDownloadsTable />
         </div>
       </div>
 
