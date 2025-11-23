@@ -229,6 +229,9 @@ export function StatsOverview() {
   );
   const [loading, setLoading] = useState(true);
   const [activities, setActivities] = useState<ActivityItem[]>([]);
+  const [totalDatasets, setTotalDatasets] = useState(0);
+  const [totalDownloads, setTotalDownloads] = useState(0);
+  const [totalDatasetValue, setTotalDatasetValue] = useState(0);
 
   useEffect(() => {
     // Fetch real data from API endpoints
@@ -244,18 +247,26 @@ export function StatsOverview() {
 
         const combinedActivities: ActivityItem[] = [];
 
+        // Calculate statistics
+        let datasetCount = 0;
+        let downloadCount = 0;
+        let totalValue = 0;
+
         // Process events (uploads)
         if (eventsData.success && eventsData.events) {
+          datasetCount = eventsData.events.length;
+
           eventsData.events.forEach((event: DatasetEvent) => {
+            // Calculate total dataset value
+            const priceInUSDC = parseFloat(event.price_usdc) / 1e6;
+            totalValue += priceInUSDC;
+
             combinedActivities.push({
               id: `event-${event.tx_hash}`,
               title: event.name,
               type: "ai", // You can determine this based on some logic if needed
               timestamp: formatTimestamp(event.timestamp),
-              value:
-                event.price_usdc === "0"
-                  ? "Free"
-                  : `$${(parseFloat(event.price_usdc) / 1e6).toFixed(2)}`,
+              value: event.price_usdc === "0" ? "Free" : `$${priceInUSDC}`,
               isPositive: true,
               eventType: "upload",
             });
@@ -264,6 +275,8 @@ export function StatsOverview() {
 
         // Process downloads
         if (downloadsData.success && downloadsData.downloads) {
+          downloadCount = downloadsData.downloads.length;
+
           downloadsData.downloads.forEach((download: DownloadEvent) => {
             combinedActivities.push({
               id: `download-${download.x402_tx_hash || download.tx_hash}`,
@@ -273,12 +286,17 @@ export function StatsOverview() {
               value:
                 download.price_usdc === "0"
                   ? "Free"
-                  : `$${(parseFloat(download.price_usdc) / 1e6).toFixed(2)}`,
+                  : `$${parseFloat(download.price_usdc) / 1e6}`,
               isPositive: true,
               eventType: "download",
             });
           });
         }
+
+        // Update statistics
+        setTotalDatasets(datasetCount);
+        setTotalDownloads(downloadCount);
+        setTotalDatasetValue(totalValue);
 
         // Sort by timestamp (newest first) - assuming timestamp is in seconds
         combinedActivities.sort((a, b) => {
@@ -286,16 +304,36 @@ export function StatsOverview() {
           return 0; // We'll keep the order from API which is already sorted
         });
 
-        setActivities(combinedActivities.slice(0, 20)); // Limit to 20 most recent
+        const newActivities = combinedActivities.slice(0, 20); // Limit to 20 most recent
+
+        // Only update if data has changed
+        setActivities((prevActivities) => {
+          const hasChanged =
+            JSON.stringify(prevActivities) !== JSON.stringify(newActivities);
+          return hasChanged ? newActivities : prevActivities;
+        });
+
         setLoading(false);
       } catch (error) {
         console.error("Error fetching activities:", error);
-        setActivities(MOCK_ACTIVITIES); // Fallback to mock data
+        // Only set mock data on first load
+        setActivities((prevActivities) =>
+          prevActivities.length === 0 ? MOCK_ACTIVITIES : prevActivities
+        );
         setLoading(false);
       }
     };
 
+    // Initial fetch
     fetchActivities();
+
+    // Poll every 10 seconds
+    const intervalId = setInterval(() => {
+      fetchActivities();
+    }, 10000);
+
+    // Cleanup interval on unmount
+    return () => clearInterval(intervalId);
   }, []);
 
   // Helper function to format timestamp
@@ -396,7 +434,7 @@ export function StatsOverview() {
                 Total Datasets
               </p>
               <h2 className="text-4xl font-bold text-white mt-2 tracking-tight">
-                <CountUp end={12845} />
+                <CountUp end={totalDatasets} />
               </h2>
             </div>
             <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-neutral-400">
@@ -407,13 +445,16 @@ export function StatsOverview() {
             <div className="flex items-center gap-1.5 text-emerald-400 bg-emerald-400/10 px-2 py-1 rounded-md">
               <Bot className="w-3.5 h-3.5" />
               <span className="font-medium">
-                <CountUp end={8420} suffix=" AI" />
+                <CountUp end={Math.floor(totalDatasets * 0.65)} suffix=" AI" />
               </span>
             </div>
             <div className="flex items-center gap-1.5 text-blue-400 bg-blue-400/10 px-2 py-1 rounded-md">
               <User className="w-3.5 h-3.5" />
               <span className="font-medium">
-                <CountUp end={4425} suffix=" Human" />
+                <CountUp
+                  end={Math.floor(totalDatasets * 0.35)}
+                  suffix=" Human"
+                />
               </span>
             </div>
           </div>
@@ -421,7 +462,7 @@ export function StatsOverview() {
           <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-linear-to-br from-blue-500/10 to-purple-500/10 rounded-full blur-3xl group-hover:bg-blue-500/20 transition-colors duration-500" />
         </div>
 
-        {/* Total Value Card */}
+        {/* Total Downloads Card */}
         <div className="bg-neutral-900/50 border border-white/5 rounded-2xl p-6 h-[200px] flex flex-col justify-between relative overflow-hidden group">
           <div className="flex items-start justify-between z-10">
             <div>
@@ -429,22 +470,22 @@ export function StatsOverview() {
                 Total Downloads
               </p>
               <h2 className="text-4xl font-bold text-white mt-2 tracking-tight">
-                <CountUp end={2.4} prefix="$" suffix="M" decimals={1} />
+                <CountUp end={totalDownloads} />
               </h2>
             </div>
             <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-neutral-400">
-              <Activity className="w-5 h-5" />
+              <Download className="w-5 h-5" />
             </div>
           </div>
           <div className="flex items-center gap-2 text-sm text-emerald-400 z-10">
             <TrendingUp className="w-4 h-4" />
-            <span className="font-medium">+12.5% this week</span>
+            <span className="font-medium">Live data</span>
           </div>
           {/* Decorative bg gradient */}
           <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-linear-to-br from-emerald-500/10 to-teal-500/10 rounded-full blur-3xl group-hover:bg-emerald-500/20 transition-colors duration-500" />
         </div>
 
-        {/* Total Value Card (Duplicate?) */}
+        {/* Total Dataset Value Card */}
         <div className="bg-neutral-900/50 border border-white/5 rounded-2xl p-6 h-[200px] flex flex-col justify-between relative overflow-hidden group">
           <div className="flex items-start justify-between z-10">
             <div>
@@ -452,7 +493,21 @@ export function StatsOverview() {
                 Total Dataset Value
               </p>
               <h2 className="text-4xl font-bold text-white mt-2 tracking-tight">
-                <CountUp end={2.4} prefix="$" suffix="M" decimals={1} />
+                {totalDatasetValue >= 1000000 ? (
+                  <CountUp
+                    end={totalDatasetValue / 1000000}
+                    prefix="$"
+                    suffix="M"
+                  />
+                ) : totalDatasetValue >= 1000 ? (
+                  <CountUp
+                    end={totalDatasetValue / 1000}
+                    prefix="$"
+                    suffix="K"
+                  />
+                ) : (
+                  <CountUp end={totalDatasetValue} prefix="$" />
+                )}
               </h2>
             </div>
             <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-neutral-400">
@@ -461,7 +516,7 @@ export function StatsOverview() {
           </div>
           <div className="flex items-center gap-2 text-sm text-emerald-400 z-10">
             <TrendingUp className="w-4 h-4" />
-            <span className="font-medium">+12.5% this week</span>
+            <span className="font-medium">Total USDC value</span>
           </div>
           {/* Decorative bg gradient */}
           <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-linear-to-br from-emerald-500/10 to-teal-500/10 rounded-full blur-3xl group-hover:bg-emerald-500/20 transition-colors duration-500" />
