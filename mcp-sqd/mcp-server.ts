@@ -168,6 +168,7 @@ function generatePipeCode(
   tableName: string,
   network: string,
   fromBlock: number,
+  toBlock?: number,
   filters?: FilterConfig
 ): string {
   const portalUrls: Record<string, string> = {
@@ -203,13 +204,18 @@ function generatePipeCode(
     .join("\n");
 
   // Generate event-specific amount position map
-  // Find the position of uint256 fields named "amount" or similar in the non-indexed data
+  // Find the position of numeric fields named "amount" or similar in the non-indexed data
   const amountPositions: Record<string, number> = {};
   events.forEach((e) => {
     const nonIndexed = e.inputs?.filter((i: any) => !i.indexed) || [];
     let position = 0;
     for (const input of nonIndexed) {
-      if (input.type === 'uint256' && (input.name === 'amount' || input.name === 'value' || input.name === 'borrowRate' || input.name.toLowerCase().includes('amount'))) {
+      // Match uint256, int256, uint128, int128, etc. for amount fields
+      const isNumericType = input.type.startsWith('uint') || input.type.startsWith('int');
+      const isAmountField = input.name === 'amount' || input.name === 'value' ||
+                           input.name === 'amount0' || input.name === 'amount1' ||
+                           input.name === 'borrowRate' || input.name.toLowerCase().includes('amount');
+      if (isNumericType && isAmountField) {
         amountPositions[e.name] = position;
         break;
       }
@@ -232,8 +238,15 @@ function generatePipeCode(
     if (filters.minAmount) {
       filterLines.push(`
               // Whale filter: minimum amount using event-specific position
+              // Uses absolute value to handle signed integers (int128/int256)
               const filterAmountPosition = AMOUNT_POSITIONS[eventType] ?? 0;
-              const filterAmount = decodeAmount(log.data, filterAmountPosition);
+              let filterAmount = decodeAmount(log.data, filterAmountPosition);
+              // Handle signed integers - convert to absolute value
+              if (filterAmount > BigInt("0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")) {
+                // Negative number in two's complement, get absolute value
+                filterAmount = -filterAmount;
+              }
+              if (filterAmount < 0n) filterAmount = -filterAmount;
               const minAmount = BigInt("${filters.minAmount}");
               if (filterAmount < minAmount) continue;`);
     }
@@ -294,6 +307,7 @@ const __dirname = path.dirname(__filename);
 const CONFIG = {
   CONTRACT_ADDRESS: "${contractAddress.toLowerCase()}",
   FROM_BLOCK: ${fromBlock},
+  TO_BLOCK: ${toBlock ? toBlock : 'undefined'},
   PORTAL_URL: "${portalUrl}",
   OUTPUT_DIR: path.join(__dirname, 'output'),
   CSV_FILE: '${tableName}.csv',
@@ -357,7 +371,7 @@ async function main() {
         address: [CONFIG.CONTRACT_ADDRESS],
         topic0: Object.values(TOPICS),
       },
-      range: { from: CONFIG.FROM_BLOCK },
+      range: { from: CONFIG.FROM_BLOCK, ...(CONFIG.TO_BLOCK ? { to: CONFIG.TO_BLOCK } : {}) },
     });
 
   let totalProcessed = 0;
@@ -526,6 +540,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               type: "number",
               description: "Starting block number (use contract deployment block for efficiency)",
               default: 0,
+            },
+            toBlock: {
+              type: "number",
+              description: "Ending block number (optional, limits data range)",
             },
             outputFile: {
               type: "string",
@@ -718,6 +736,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           network = "mainnet",
           tableName: baseTableName,
           fromBlock = 0,
+          toBlock,
           outputFile: baseOutputFile,
           events: eventFilter,
           customEvents,
@@ -779,6 +798,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           tableName,
           network,
           fromBlock,
+          toBlock,
           filters
         );
 
