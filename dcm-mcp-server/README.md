@@ -1,64 +1,102 @@
-# DataBox MCP Server
+# Data Context Market MCP Server
 
-MCP (Model Context Protocol) server for uploading and downloading content from Filecoin storage via the DataBox server. Automatically handles x402 payments when required.
-
-## Overview
-
-This MCP server provides AI assistants with tools to:
-- Upload messages, files, or URLs to Filecoin storage
-- Download content from Filecoin using PieceCIDs
-- Discover and download datasets by search query
-
-All prices are automatically converted to readable USD format (e.g., "$0.01") for display to users.
+MCP server for AI assistants to interact with DCM (Data Context Market) via Filecoin storage. Automatically handles x402 micropayments.
 
 ## Tools
 
-### 1. `upload-to-filecoin`
-Upload content to Filecoin storage.
+### 1. `upload-to-DCM`
+Upload content to Data Context Market storage.
 
 **Parameters:**
-- `message` (optional): Text message to upload
-- `file` (optional): Base64-encoded file data
-- `filename` (optional): Filename (required when uploading via base64)
-- `mimeType` (optional): MIME type of the file
-- `url` (optional): URL of a publicly accessible file to download and upload
+- `message/file/url/filePath` (one required): Content to upload
 - `name` (required): Name of the file/data
-- `description` (required): Description of the file/data
-- `priceUSD` (required): Price in USD (e.g., 0.01 for $0.01)
-- `payAddress` (required): Address to receive payments (EVM or Solana)
+- `description` (required): Description
+- `priceUSD` (required): Price in USD (e.g., 0.01)
+- `payAddress` (required): Payment address (0x... or Solana)
+- `filename`, `mimeType` (optional): File metadata
 
-**Server Route:** `POST /upload`
-
-### 2. `download-from-filecoin`
-Download content from Filecoin storage using a PieceCID.
-
-**Parameters:**
-- `pieceCid` (required): The PieceCID of the file to download
-
-**Server Route:** `GET /download?pieceCid=<PieceCID>`
-
-### 3. `discover-and-download`
-Search for a dataset by query and automatically download it.
+### 2. `download-from-DCM`
+Download content using a PieceCID. Automatically handles x402 payment.
 
 **Parameters:**
-- `query` (required): Search query to find a dataset
+- `pieceCid` (required): The PieceCID to download
 
-**Server Routes:**
-- `GET /discover_query?q=<query>` - Search for matching dataset
-- `GET /download?pieceCid=<PieceCID>` - Download the found dataset
+### 3. `discover-data`
+Search datasets by query. Returns metadata only (no download).
+
+**Parameters:**
+- `query` (required): Search query
+
+### 4. `discover-and-download`
+Search and download in one operation.
+
+**Parameters:**
+- `query` (required): Search query
 
 ## Configuration
 
-Set the following environment variables:
+### Environment Variables
 
-- `PRIVATE_KEY` (required): Ethereum private key for payment handling (hex format: 0x...)
-- `RESOURCE_SERVER_URL` (optional): Server URL (defaults to production)
+```env
+PRIVATE_KEY=0x...  # Required for x402 payments
+RESOURCE_SERVER_URL=https://ba-hack-production.up.railway.app  # Optional
+```
+
+### Claude Desktop Setup
+
+**macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`  
+**Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "DCM-mcp": {
+      "command": "pnpm",
+      "args": [
+        "--silent",
+        "-C",
+        "your_path_to_repo/Data-Context-Market/dcm-mcp-server",
+        "dev"
+      ],
+      "env": {
+        "PRIVATE_KEY": "0x...",
+        "RESOURCE_SERVER_URL": "https://ba-hack-production.up.railway.app"
+      }
+    }
+  }
+}
+```
 
 ## Features
 
-- **Automatic Payment Handling**: Uses x402-axios to automatically handle 402 payment responses
-- **Price Formatting**: Converts USDC amounts to readable USD format for users
-- **Input Validation**: Validates PieceCIDs, addresses, base64 data, and prices
-- **Error Handling**: Provides clear error messages for network and validation errors
-- **Type Safety**: Full TypeScript support with proper interfaces
+- **x402 Payments**: Automatic payment handling via x402-axios
+- **Price Formatting**: Converts USDC to readable USD format ($0.01, $1.00)
+- **Smart Contract**: Registers uploads on DataContextMarketRegistry (Sepolia)
+- **Validation**: PieceCIDs, addresses, base64 data, prices
+- **Type Safety**: Full TypeScript with Zod schemas
 
+## Networks
+
+- **Payment**: Base Sepolia testnet
+- **Contract**: Sepolia testnet
+- **Storage**: Filecoin
+
+## How It Works
+
+**Upload:** Content → DCM Backend → Filecoin + Smart Contract → PieceCID
+
+**Download:** PieceCID → DCM Backend → 402 response → x402 payment → Content
+
+**Discover:** Query → ClickHouse → Ranked results
+
+## Troubleshooting
+
+- **"PRIVATE_KEY is required"**: Set env variable with hex private key (0x...)
+- **"Network error"**: Check internet and RESOURCE_SERVER_URL
+- **"Invalid PieceCID"**: Must start with `bafk` or `baga`
+- **"Payment failed"**: Ensure wallet has USDC on Base Sepolia
+
+## Security
+
+- Never commit `PRIVATE_KEY`
+- Ensure sufficient USDC balance on Base Sepolia for payments
