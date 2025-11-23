@@ -1015,21 +1015,27 @@ export function StatsOverview() {
                   cursor={{ fill: "rgba(255, 255, 255, 0.05)" }}
                 />
                 <Legend
-                  wrapperStyle={{ paddingTop: "10px", fontSize: "10px" }}
+                  wrapperStyle={{
+                    paddingTop: "10px",
+                    fontSize: "10px",
+                  }}
                   iconType="rect"
                   iconSize={8}
+                  formatter={(value: string) => (
+                    <span style={{ color: "#d1d5db" }}>{value}</span>
+                  )}
                 />
                 {/* AI Bars */}
                 <Bar
                   dataKey="AI_uploads"
-                  fill="#8b5cf6"
+                  fill="#7c3aed"
                   radius={[2, 2, 0, 0]}
                   name="AI ↑"
                   minPointSize={2}
                 />
                 <Bar
                   dataKey="AI_downloads"
-                  fill="#a78bfa"
+                  fill="#06b6d4"
                   radius={[2, 2, 0, 0]}
                   name="AI ↓"
                   minPointSize={2}
@@ -1037,14 +1043,14 @@ export function StatsOverview() {
                 {/* Finance Bars */}
                 <Bar
                   dataKey="Finance_uploads"
-                  fill="#10b981"
+                  fill="#059669"
                   radius={[2, 2, 0, 0]}
                   name="Finance ↑"
                   minPointSize={2}
                 />
                 <Bar
                   dataKey="Finance_downloads"
-                  fill="#34d399"
+                  fill="#38bdf8"
                   radius={[2, 2, 0, 0]}
                   name="Finance ↓"
                   minPointSize={2}
@@ -1052,14 +1058,14 @@ export function StatsOverview() {
                 {/* Healthcare Bars */}
                 <Bar
                   dataKey="Healthcare_uploads"
-                  fill="#f59e0b"
+                  fill="#dc2626"
                   radius={[2, 2, 0, 0]}
                   name="Healthcare ↑"
                   minPointSize={2}
                 />
                 <Bar
                   dataKey="Healthcare_downloads"
-                  fill="#fbbf24"
+                  fill="#f472b6"
                   radius={[2, 2, 0, 0]}
                   name="Healthcare ↓"
                   minPointSize={2}
@@ -1067,14 +1073,14 @@ export function StatsOverview() {
                 {/* Research Bars */}
                 <Bar
                   dataKey="Research_uploads"
-                  fill="#3b82f6"
+                  fill="#2563eb"
                   radius={[2, 2, 0, 0]}
                   name="Research ↑"
                   minPointSize={2}
                 />
                 <Bar
                   dataKey="Research_downloads"
-                  fill="#60a5fa"
+                  fill="#22d3ee"
                   radius={[2, 2, 0, 0]}
                   name="Research ↓"
                   minPointSize={2}
@@ -1082,14 +1088,14 @@ export function StatsOverview() {
                 {/* Other Bars */}
                 <Bar
                   dataKey="Other_uploads"
-                  fill="#6b7280"
+                  fill="#4b5563"
                   radius={[2, 2, 0, 0]}
                   name="Other ↑"
                   minPointSize={2}
                 />
                 <Bar
                   dataKey="Other_downloads"
-                  fill="#9ca3af"
+                  fill="#fbbf24"
                   radius={[2, 2, 0, 0]}
                   name="Other ↓"
                   minPointSize={2}
