@@ -656,6 +656,53 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           required: ["csvPath", "operations"],
         },
       },
+      {
+        name: "aggregate_csv",
+        description:
+          "Flexible aggregation tool for CSV data. Group by any column and apply aggregation functions (sum, count, avg, min, max) to other columns. Perfect for custom analytics like 'sum amount by wallet' or 'count transactions by event type'.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            csvPath: {
+              type: "string",
+              description: "Path to the CSV file (full path or filename in output folder)",
+            },
+            groupBy: {
+              type: "string",
+              description: "Column to group by (e.g., 'from_address', 'event_type', 'to_address')",
+            },
+            aggregations: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  column: { type: "string", description: "Column to aggregate" },
+                  function: { type: "string", enum: ["sum", "count", "avg", "min", "max"], description: "Aggregation function" },
+                  alias: { type: "string", description: "Output column name (optional)" },
+                },
+                required: ["column", "function"],
+              },
+              description: "List of aggregations to perform. E.g., [{column: 'amount', function: 'sum', alias: 'total_amount'}]",
+            },
+            sortBy: {
+              type: "string",
+              description: "Column to sort results by (optional)",
+            },
+            sortOrder: {
+              type: "string",
+              enum: ["asc", "desc"],
+              description: "Sort order (default: desc)",
+              default: "desc",
+            },
+            limit: {
+              type: "number",
+              description: "Limit number of results (default: 100)",
+              default: 100,
+            },
+          },
+          required: ["csvPath", "groupBy", "aggregations"],
+        },
+      },
     ],
   };
 });
@@ -1125,6 +1172,180 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             {
               type: "text",
               text: `Analysis complete!\n\nInput: ${resolvedPath}\nOutput: ${outputPath}\nOutput URL: ${outputUrl}\n\nResults:\n${JSON.stringify(results, null, 2)}`,
+            },
+          ],
+        };
+      }
+
+      case "aggregate_csv": {
+        const { csvPath, groupBy, aggregations, sortBy, sortOrder = "desc", limit = 100 } = args as any;
+
+        // Resolve CSV path
+        let resolvedPath = csvPath;
+        if (!path.isAbsolute(csvPath)) {
+          resolvedPath = path.join(__dirname, 'output', csvPath);
+        }
+
+        if (!fs.existsSync(resolvedPath)) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `CSV file not found: ${resolvedPath}`,
+              },
+            ],
+          };
+        }
+
+        // Read and parse CSV
+        const csvContent = fs.readFileSync(resolvedPath, 'utf-8');
+        const lines = csvContent.split('\n').filter(line => line.trim());
+        if (lines.length < 2) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `CSV file is empty or has no data rows`,
+              },
+            ],
+          };
+        }
+
+        const headers = lines[0].split(',').map(h => h.replace(/"/g, '').trim());
+        const rows = lines.slice(1).map(line => {
+          const values = line.match(/(".*?"|[^,]+)/g) || [];
+          const row: Record<string, string> = {};
+          headers.forEach((h, i) => {
+            row[h] = values[i]?.replace(/"/g, '').trim() || '';
+          });
+          return row;
+        });
+
+        // Validate groupBy column exists
+        if (!headers.includes(groupBy)) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Column '${groupBy}' not found. Available columns: ${headers.join(', ')}`,
+              },
+            ],
+          };
+        }
+
+        // Perform aggregation
+        const groups: Record<string, any[]> = {};
+        rows.forEach(row => {
+          const key = row[groupBy] || 'unknown';
+          if (!groups[key]) groups[key] = [];
+          groups[key].push(row);
+        });
+
+        // Calculate aggregations for each group
+        const results = Object.entries(groups).map(([groupKey, groupRows]) => {
+          const result: Record<string, any> = { [groupBy]: groupKey };
+
+          for (const agg of aggregations) {
+            const { column, function: fn, alias } = agg;
+            const outputName = alias || `${fn}_${column}`;
+            const values = groupRows.map(r => r[column]).filter(v => v !== '');
+
+            switch (fn) {
+              case 'sum':
+                // Handle both numeric and bigint values
+                try {
+                  const sum = values.reduce((acc, v) => {
+                    const num = BigInt(v || '0');
+                    return acc + num;
+                  }, 0n);
+                  result[outputName] = sum.toString();
+                } catch {
+                  result[outputName] = values.reduce((acc, v) => acc + parseFloat(v || '0'), 0).toString();
+                }
+                break;
+              case 'count':
+                result[outputName] = values.length;
+                break;
+              case 'avg':
+                try {
+                  const sum = values.reduce((acc, v) => acc + BigInt(v || '0'), 0n);
+                  result[outputName] = values.length > 0 ? (sum / BigInt(values.length)).toString() : '0';
+                } catch {
+                  const sum = values.reduce((acc, v) => acc + parseFloat(v || '0'), 0);
+                  result[outputName] = values.length > 0 ? (sum / values.length).toString() : '0';
+                }
+                break;
+              case 'min':
+                try {
+                  const min = values.reduce((acc, v) => {
+                    const num = BigInt(v || '0');
+                    return num < acc ? num : acc;
+                  }, BigInt(values[0] || '0'));
+                  result[outputName] = min.toString();
+                } catch {
+                  result[outputName] = Math.min(...values.map(v => parseFloat(v || '0'))).toString();
+                }
+                break;
+              case 'max':
+                try {
+                  const max = values.reduce((acc, v) => {
+                    const num = BigInt(v || '0');
+                    return num > acc ? num : acc;
+                  }, 0n);
+                  result[outputName] = max.toString();
+                } catch {
+                  result[outputName] = Math.max(...values.map(v => parseFloat(v || '0'))).toString();
+                }
+                break;
+            }
+          }
+
+          return result;
+        });
+
+        // Sort results
+        const sortColumn = sortBy || (aggregations[0] ? (aggregations[0].alias || `${aggregations[0].function}_${aggregations[0].column}`) : groupBy);
+        results.sort((a, b) => {
+          const aVal = a[sortColumn];
+          const bVal = b[sortColumn];
+          try {
+            const aNum = BigInt(aVal || '0');
+            const bNum = BigInt(bVal || '0');
+            return sortOrder === 'desc' ? (bNum > aNum ? 1 : -1) : (aNum > bNum ? 1 : -1);
+          } catch {
+            const aNum = parseFloat(aVal || '0');
+            const bNum = parseFloat(bVal || '0');
+            return sortOrder === 'desc' ? bNum - aNum : aNum - bNum;
+          }
+        });
+
+        // Limit results
+        const limitedResults = results.slice(0, limit);
+
+        // Generate output CSV
+        const timestamp = Date.now();
+        const baseName = path.basename(resolvedPath, '.csv');
+        const outputFileName = `${baseName}_aggregated_${timestamp}.csv`;
+        const outputPath = path.join(__dirname, 'output', outputFileName);
+
+        if (limitedResults.length > 0) {
+          const outputHeaders = Object.keys(limitedResults[0]);
+          const csvLines = [
+            outputHeaders.join(','),
+            ...limitedResults.map(row =>
+              outputHeaders.map(h => `"${String(row[h] || '').replace(/"/g, '""')}"`).join(',')
+            )
+          ];
+          fs.writeFileSync(outputPath, csvLines.join('\n'));
+        }
+
+        const outputUrl = `file://${outputPath}`;
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Aggregation complete!\n\nInput: ${resolvedPath}\nOutput: ${outputPath}\nOutput URL: ${outputUrl}\n\nGrouped by: ${groupBy}\nTotal groups: ${results.length}\nShowing: ${limitedResults.length}\n\nTop results:\n${JSON.stringify(limitedResults.slice(0, 10), null, 2)}`,
             },
           ],
         };
