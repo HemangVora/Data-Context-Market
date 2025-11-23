@@ -2,6 +2,48 @@
 
 A decentralized marketplace for buying and selling data using Filecoin storage, blockchain indexing, and AI-powered discovery through x402 micropayments.
 
+---
+
+## Technology Stack
+
+### 🤖 MCP (Model Context Protocol)
+
+DCM is built as a suite of MCP servers that integrate directly with AI assistants like Claude. Users can index blockchain data, upload files, and manage datasets using natural language commands. AI agents can autonomously discover and purchase data.
+
+### 📊 SQD (Subsquid) Pipes SDK
+
+We built an MCP server around SQD Pipes SDK for natural language blockchain data indexing. Users can create pipes to index any smart contract event, apply custom filters, aggregate data, and export to CSV - all through prompts.
+
+### 🗄️ Filecoin Storage
+
+We built an MCP server for decentralized storage and marketplace functionality. Upload files to Filecoin, set pricing, register datasets on-chain, and enable AI agents to discover and purchase data.
+
+### 💰 x402 Protocol
+
+HTTP-native micropayments enabling AI agents to autonomously pay for data. Agents can discover datasets and purchase them instantly with USDC on Base - no human intervention required.
+
+### 👛 Embedded Wallets
+
+AI agents have their own embedded wallets to make autonomous payments. This enables true agent-to-agent commerce where agents can browse, purchase, and download data without user involvement.
+
+### 🔗 Data Registry (On-Chain)
+
+Smart contract on Sepolia tracking all uploaded datasets:
+
+- Immutable record of every upload
+- Discoverable metadata (name, description, price, PieceCID)
+- Payment routing to creator wallets
+
+### ⚡ ClickHouse
+
+High-performance analytics database:
+
+- Columnar storage optimized for aggregations
+- Fast ingestion of millions of events
+- SQL interface
+
+---
+
 ## 🏗️ Architecture
 
 ```
