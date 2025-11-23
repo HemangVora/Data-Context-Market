@@ -14,11 +14,7 @@ DCM bridges data creators and AI agents through a decentralized marketplace. Cre
 
 ### 🤖 MCP (Model Context Protocol)
 
-DCM is built as a suite of **MCP servers** that integrate directly with AI assistants like Claude:
-
-- Natural language commands to index blockchain data
-- AI agents discover, purchase, and download datasets autonomously
-- Seamless tool orchestration without custom API integrations
+DCM is built as a suite of MCP servers that integrate directly with AI assistants like Claude. Users can index blockchain data, upload files, and manage datasets using natural language commands. AI agents can autonomously discover and purchase data.
 
 ### 📊 SQD (Subsquid) Pipes SDK
 
