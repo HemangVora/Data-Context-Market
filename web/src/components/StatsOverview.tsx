@@ -850,7 +850,10 @@ export function StatsOverview() {
                           )}
                         </div>
                         <div>
-                          <div className="text-sm font-medium text-neutral-200 group-hover:text-white truncate max-w-[160px]">
+                          <div
+                            className="text-sm font-medium text-neutral-200 group-hover:text-white truncate max-w-[240px]"
+                            title={item.title}
+                          >
                             {item.title}
                           </div>
                           <div className="flex items-center gap-2 text-xs text-neutral-500">
