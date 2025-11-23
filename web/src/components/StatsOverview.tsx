@@ -266,10 +266,7 @@ export function StatsOverview() {
               title: event.name,
               type: "ai", // You can determine this based on some logic if needed
               timestamp: formatTimestamp(event.timestamp),
-              value:
-                event.price_usdc === "0"
-                  ? "Free"
-                  : `$${priceInUSDC}`,
+              value: event.price_usdc === "0" ? "Free" : `$${priceInUSDC}`,
               isPositive: true,
               eventType: "upload",
             });
@@ -289,7 +286,7 @@ export function StatsOverview() {
               value:
                 download.price_usdc === "0"
                   ? "Free"
-                  : `$${(parseFloat(download.price_usdc) / 1e6).toFixed(2)}`,
+                  : `$${parseFloat(download.price_usdc) / 1e6}`,
               isPositive: true,
               eventType: "download",
             });
@@ -501,17 +498,15 @@ export function StatsOverview() {
                     end={totalDatasetValue / 1000000}
                     prefix="$"
                     suffix="M"
-                    decimals={2}
                   />
                 ) : totalDatasetValue >= 1000 ? (
                   <CountUp
                     end={totalDatasetValue / 1000}
                     prefix="$"
                     suffix="K"
-                    decimals={2}
                   />
                 ) : (
-                  <CountUp end={totalDatasetValue} prefix="$" decimals={2} />
+                  <CountUp end={totalDatasetValue} prefix="$" />
                 )}
               </h2>
             </div>
