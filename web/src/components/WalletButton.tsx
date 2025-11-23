@@ -68,7 +68,7 @@ export function WalletButton() {
 
   return (
     <div className="flex items-center gap-2 relative z-[9999]">
-      <div className="[&>button]:flex [&>button]:items-center [&>button]:gap-2 [&>button]:px-4 [&>button]:py-2 [&>button]:rounded-full [&>button]:bg-white/5 [&>button]:hover:bg-white/10 [&>button]:border [&>button]:border-white/10 [&>button]:transition-all [&>button]:text-sm [&>button]:font-medium">
+      <div className="[&>button]:flex [&>button]:items-center [&>button]:gap-2 [&>button]:px-4 [&>button]:py-2 [&>button]:rounded-full [&>button]:bg-indigo-500/10 [&>button]:hover:bg-indigo-500/20 [&>button]:border [&>button]:border-indigo-500/30 [&>button]:transition-all [&>button]:text-sm [&>button]:font-medium [&>button]:text-indigo-300">
         <AuthButton />
       </div>
     </div>

@@ -12,7 +12,7 @@ export default function Home() {
 
       <div className="container mx-auto px-4 py-12 max-w-7xl">
         {/* Hero / Search Section */}
-        <div className="flex flex-col items-center text-center mb-16 mt-8"></div>
+        <div className="flex flex-col items-center text-center mb-6 mt-8"></div>
 
         {/* Stats Overview */}
         <StatsOverview />
