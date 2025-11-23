@@ -1,6 +1,10 @@
-# Data Context Market (DCM)
-
-A decentralized marketplace for buying and selling data using Filecoin storage, blockchain indexing, and AI-powered discovery through x402 micropayments.
+<div align="center">
+  <img src="img/logo.png" alt="Data Context Market" width="100"/>
+  
+  # Data Context Market (DCM)
+  
+  A decentralized marketplace for buying and selling data leveraging Filecoin storage, blockchain indexing with SQD, x402 micropayments and easy onboarding with CDP embedded wallets.
+</div>
 
 ---
 
@@ -154,6 +158,14 @@ cd web && npm install && npm run dev
 ## 📖 Docs
 
 [Contracts](./contracts/dcm_registry/README.md) • [Server API](./server/README.md) • [Indexer](./sqd/README.md) • [Frontend](./web/README.md) • [Deployment](./DEPLOYMENT_CHECKLIST.md)
+
+---
+
+## 🤖 AI Tools Attribution
+
+This project was built with assistance from AI tools:
+- **Claude Desktop**: Used for testing and developing MCP tools
+- **Cursor & Claude Code**: Provided coding assistance throughout the monorepo development
 
 ---
 
