@@ -274,16 +274,8 @@ export function StatsOverview() {
   const [datasetChartData, setDatasetChartData] = useState<
     Array<{
       time: string;
-      AI_uploads: number;
-      AI_downloads: number;
-      Finance_uploads: number;
-      Finance_downloads: number;
-      Healthcare_uploads: number;
-      Healthcare_downloads: number;
-      Research_uploads: number;
-      Research_downloads: number;
-      Other_uploads: number;
-      Other_downloads: number;
+      uploads: number;
+      downloads: number;
     }>
   >([]);
   const [tagCounts, setTagCounts] = useState({
@@ -541,90 +533,39 @@ export function StatsOverview() {
               .padStart(2, "0")}`;
         }
 
-        // Group data by time intervals with categories
+        // Group data by time intervals
         const activityByTime: {
-          [time: string]: {
-            AI_uploads: number;
-            AI_downloads: number;
-            Finance_uploads: number;
-            Finance_downloads: number;
-            Healthcare_uploads: number;
-            Healthcare_downloads: number;
-            Research_uploads: number;
-            Research_downloads: number;
-            Other_uploads: number;
-            Other_downloads: number;
-          };
+          [time: string]: { uploads: number; downloads: number };
         } = {};
 
-        // Process uploads with categories
+        // Process uploads
         uploads.forEach((event: DatasetEvent) => {
           const eventDate = new Date(event.timestamp * 1000);
           const timeKey = formatLabel(eventDate);
-          const tag = getDatasetTag(event.name, event.description);
 
           if (!activityByTime[timeKey]) {
-            activityByTime[timeKey] = {
-              AI_uploads: 0,
-              AI_downloads: 0,
-              Finance_uploads: 0,
-              Finance_downloads: 0,
-              Healthcare_uploads: 0,
-              Healthcare_downloads: 0,
-              Research_uploads: 0,
-              Research_downloads: 0,
-              Other_uploads: 0,
-              Other_downloads: 0,
-            };
+            activityByTime[timeKey] = { uploads: 0, downloads: 0 };
           }
-
-          // Increment the appropriate category upload
-          if (tag === "AI") activityByTime[timeKey].AI_uploads++;
-          else if (tag === "Finance") activityByTime[timeKey].Finance_uploads++;
-          else if (tag === "Healthcare")
-            activityByTime[timeKey].Healthcare_uploads++;
-          else if (tag === "Research")
-            activityByTime[timeKey].Research_uploads++;
-          else activityByTime[timeKey].Other_uploads++;
+          activityByTime[timeKey].uploads++;
         });
 
-        // Process downloads with categories
+        // Process downloads
         downloads.forEach((download: DownloadEvent) => {
           const downloadDate = new Date(download.timestamp * 1000);
           const timeKey = formatLabel(downloadDate);
-          const tag = getDatasetTag(download.name, download.description);
 
           if (!activityByTime[timeKey]) {
-            activityByTime[timeKey] = {
-              AI_uploads: 0,
-              AI_downloads: 0,
-              Finance_uploads: 0,
-              Finance_downloads: 0,
-              Healthcare_uploads: 0,
-              Healthcare_downloads: 0,
-              Research_uploads: 0,
-              Research_downloads: 0,
-              Other_uploads: 0,
-              Other_downloads: 0,
-            };
+            activityByTime[timeKey] = { uploads: 0, downloads: 0 };
           }
-
-          // Increment the appropriate category download
-          if (tag === "AI") activityByTime[timeKey].AI_downloads++;
-          else if (tag === "Finance")
-            activityByTime[timeKey].Finance_downloads++;
-          else if (tag === "Healthcare")
-            activityByTime[timeKey].Healthcare_downloads++;
-          else if (tag === "Research")
-            activityByTime[timeKey].Research_downloads++;
-          else activityByTime[timeKey].Other_downloads++;
+          activityByTime[timeKey].downloads++;
         });
 
         // Convert to array and sort
         const chartData = Object.entries(activityByTime)
           .map(([time, counts]) => ({
             time,
-            ...counts,
+            uploads: counts.uploads,
+            downloads: counts.downloads,
           }))
           .sort((a, b) => a.time.localeCompare(b.time));
 
@@ -993,6 +934,28 @@ export function StatsOverview() {
           <div className="flex-1 w-full -ml-4 mt-4 relative z-0">
             <ResponsiveContainer width="115%" height="100%">
               <BarChart data={datasetChartData} barGap={1} barCategoryGap={2}>
+                <defs>
+                  <linearGradient
+                    id="uploadGradient"
+                    x1="0"
+                    y1="0"
+                    x2="0"
+                    y2="1"
+                  >
+                    <stop offset="0%" stopColor="#3b82f6" stopOpacity={1} />
+                    <stop offset="100%" stopColor="#1d4ed8" stopOpacity={0.9} />
+                  </linearGradient>
+                  <linearGradient
+                    id="downloadGradient"
+                    x1="0"
+                    y1="0"
+                    x2="0"
+                    y2="1"
+                  >
+                    <stop offset="0%" stopColor="#10b981" stopOpacity={1} />
+                    <stop offset="100%" stopColor="#047857" stopOpacity={0.9} />
+                  </linearGradient>
+                </defs>
                 <XAxis
                   dataKey="time"
                   axisLine={false}
@@ -1017,87 +980,26 @@ export function StatsOverview() {
                 <Legend
                   wrapperStyle={{
                     paddingTop: "10px",
-                    fontSize: "10px",
+                    fontSize: "12px",
                   }}
                   iconType="rect"
-                  iconSize={8}
+                  iconSize={10}
                   formatter={(value: string) => (
                     <span style={{ color: "#d1d5db" }}>{value}</span>
                   )}
                 />
-                {/* AI Bars */}
                 <Bar
-                  dataKey="AI_uploads"
-                  fill="#7c3aed"
-                  radius={[2, 2, 0, 0]}
-                  name="AI ↑"
+                  dataKey="uploads"
+                  fill="url(#uploadGradient)"
+                  radius={[4, 4, 0, 0]}
+                  name="Uploads"
                   minPointSize={2}
                 />
                 <Bar
-                  dataKey="AI_downloads"
-                  fill="#06b6d4"
-                  radius={[2, 2, 0, 0]}
-                  name="AI ↓"
-                  minPointSize={2}
-                />
-                {/* Finance Bars */}
-                <Bar
-                  dataKey="Finance_uploads"
-                  fill="#059669"
-                  radius={[2, 2, 0, 0]}
-                  name="Finance ↑"
-                  minPointSize={2}
-                />
-                <Bar
-                  dataKey="Finance_downloads"
-                  fill="#38bdf8"
-                  radius={[2, 2, 0, 0]}
-                  name="Finance ↓"
-                  minPointSize={2}
-                />
-                {/* Healthcare Bars */}
-                <Bar
-                  dataKey="Healthcare_uploads"
-                  fill="#dc2626"
-                  radius={[2, 2, 0, 0]}
-                  name="Healthcare ↑"
-                  minPointSize={2}
-                />
-                <Bar
-                  dataKey="Healthcare_downloads"
-                  fill="#f472b6"
-                  radius={[2, 2, 0, 0]}
-                  name="Healthcare ↓"
-                  minPointSize={2}
-                />
-                {/* Research Bars */}
-                <Bar
-                  dataKey="Research_uploads"
-                  fill="#2563eb"
-                  radius={[2, 2, 0, 0]}
-                  name="Research ↑"
-                  minPointSize={2}
-                />
-                <Bar
-                  dataKey="Research_downloads"
-                  fill="#22d3ee"
-                  radius={[2, 2, 0, 0]}
-                  name="Research ↓"
-                  minPointSize={2}
-                />
-                {/* Other Bars */}
-                <Bar
-                  dataKey="Other_uploads"
-                  fill="#4b5563"
-                  radius={[2, 2, 0, 0]}
-                  name="Other ↑"
-                  minPointSize={2}
-                />
-                <Bar
-                  dataKey="Other_downloads"
-                  fill="#fbbf24"
-                  radius={[2, 2, 0, 0]}
-                  name="Other ↓"
+                  dataKey="downloads"
+                  fill="url(#downloadGradient)"
+                  radius={[4, 4, 0, 0]}
+                  name="Downloads"
                   minPointSize={2}
                 />
               </BarChart>
