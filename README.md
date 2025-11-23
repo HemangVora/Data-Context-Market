@@ -5,46 +5,60 @@ A decentralized marketplace for buying and selling data using Filecoin storage, 
 ## 🏗️ Architecture
 
 ```
-     ┌──────────┐                    ┌──────────┐
-     │  Human   │                    │AI Agent  │
-     │   User   │                    │          │
-     └────┬─────┘                    └────┬─────┘
-          │                               │
-    ┌─────┴─────┐                         │
-    │           │                         │
-    ▼           ▼                         ▼
-┌────────┐  ┌────────┐              ┌──────────┐
-│  Web   │  │Claude  │              │   MCP    │
-│   UI   │  │  AI    │─────────────►│  Server  │
-└───┬────┘  └────────┘              └─────┬────┘
-    │                                     │
-    │      (x402 payments)    (x402 payments)
-    │                                     │
-    ▼                                     ▼
-  ┌───────────────────────────────────────────┐
-  │          Backend Server (x402 Protected)  │
-  └───────┬──────────┬──────────┬─────────────┘
-          │          │          │
-          ▼          ▼          ▼
-    ┌─────────┐ ┌──────────┐ ┌──────────┐
-    │Filecoin │ │  Smart   │ │ClickHouse│
-    │ Storage │ │ Contract │ │ Database │
-    │         │ │(Sepolia) │ │          │
-    └─────────┘ └──────┬───┘ └──────────┘
-                       │           ▲
-                       │           │
-                       │      ┌────┴─────┐
-                       └─────►│   SQD    │
-                              │ Indexer  │
-                              └──────────┘
+      ┌──────────┐                     ┌──────────┐
+      │  Human   │                     │ AI Agent │
+      │   User   │                     │ (System) │
+      └────┬─────┘                     └────┬─────┘
+           │                                │
+     ┌─────┴──────┐                         │
+     │            │                         │
+     ▼            ▼                         ▼
+ ┌────────┐  ┌────────┐          ┌──────────────────────┐
+ │  Web   │  │ Claude │◄────────►│      MCP LAYER       │
+ │   UI   │  │   AI   │          │ (Tool Connectivity)  │
+ └───┬────┘  └───┬────┘          └─────┬──────────┬─────┘
+     │           │                     │          │
+     │           │    ┌────────────────┘          │
+     │(x402)     │    │                           │
+     │           ▼    ▼                           ▼
+     │       ┌───────────┐                  ┌───────────┐
+     │       │  SQD MCP  │                  │  DCM MCP  │
+     │       │  Server   │                  │  Server   │
+     │       └───────────┘                  └─────┬─────┘
+     │                                            │
+     ▼                                            │(x402)
+  ┌───────────────────────────────────────────────▼─────┐
+  │                    Backend                          │
+  │              (Downloads x402 Protected)             │
+  └──────┬───────────────────────┬──────────────────▲───┘
+         │                       │                  │
+         │(Encrypt)              ▼                  │
+         ▼                 ┌──────────┐             │
+   ┌──────────┐            │ Registry │             │
+   │ Filecoin │            │  Smart   │             │
+   │ Storage  │            │ Contract │             │
+   │          │            └─────┬────┘             │
+   └──────────┘                  │                  │
+                           ┌─────▼─────┐            │
+                           │    SQD    │            │
+                           │  Indexer  │            │
+                           └─────┬─────┘            │
+                                 │                  │
+                           ┌─────▼─────┐            │
+                           │  ClickH.  │────────────┘
+                           │ Database  │
+                           └───────────┘
 ```
 
 **Interaction Paths:**
-- 🤖 **AI Agent**: MCP Server → x402 payment → Backend Server
-- 👤 **Human via Claude**: Claude → MCP Server → x402 payment → Backend Server  
-- 👤 **Human via Web UI**: Web Frontend → x402 payment → Backend Server
-- 🔄 **Backend**: Parallel interactions with Filecoin, Smart Contract, and ClickHouse
-- 📊 **Data Indexing**: Smart Contract emits events → SQD Indexer → ClickHouse Database
+- 🤖 **AI Agent / Human via Claude**: 
+  1. **Generate dataset**: Claude/AI ← SQD MCP returns datasets
+  2. **Upload dataset**: Claude/AI → DCM MCP → x402 payment → Backend → Filecoin
+  3. **Download content**: DCM MCP → x402 payment → Backend → Filecoin
+- 👤 **Human via Web UI**: Web UI → x402 payment → Backend Server
+- 🔄 **Backend**: Handles Filecoin storage, smart contract registration, and ClickHouse queries
+- 📊 **Data Indexing**: Smart Contract events → SQD Indexer → ClickHouse
+- 🔍 **x402 Payments**: Only between Web UI/DCM MCP and Backend Server
 
 ## 📦 Components
 
@@ -76,12 +90,13 @@ A decentralized marketplace for buying and selling data using Filecoin storage, 
 - `GET /weather` - Example paid endpoint ($0.001 USDC)
 
 ### [`dcm-mcp-server`](./dcm-mcp-server)
-**MCP Server for AI** - Model Context Protocol server for Claude/AI assistants
+**DCM MCP Server** - Model Context Protocol server for Data Context Market
 
 Provides AI tools to interact with the marketplace:
-- `upload-to-filecoin` - Upload files/messages with pricing
-- `download-from-filecoin` - Download by PieceCID
-- `discover-and-download` - Search and download datasets
+- `upload-to-DCM` - Upload files/messages with pricing
+- `download-from-DCM` - Download by PieceCID
+- `discover-data` - Search for datasets
+- `discover-and-download` - Search and download in one step
 
 Automatically handles x402 micropayments transparently for AI agents.
 
@@ -100,13 +115,15 @@ Automatically handles x402 micropayments transparently for AI agents.
 - Generate marketplace analytics
 
 ### [`mcp-sqd`](./mcp-sqd)
-**MCP Server for Data Queries** - AI-powered data aggregation
+**SQD MCP Server** - AI-powered blockchain data aggregation
 
-MCP server that lets AI assistants:
-- Create custom blockchain data pipes
-- Query indexed events from ClickHouse
-- Aggregate and analyze marketplace data
-- Track user activity and dataset popularity
+MCP server that lets AI assistants generate datasets from blockchain data:
+- Create custom SQD pipes for any EVM contract
+- Query and aggregate indexed events from ClickHouse
+- Generate CSV datasets from on-chain data
+- Analyze marketplace activity and trends
+
+Generated datasets can then be uploaded to DCM via the DCM MCP Server.
 
 ### [`web`](./web)
 **Frontend UI** - Next.js marketplace interface
@@ -173,7 +190,9 @@ npm install
 - **Decentralized Storage**: Files stored on Filecoin with content addressing
 - **Micropayments**: x402 protocol enables sub-dollar transactions
 - **Event Indexing**: All marketplace activity indexed for analytics
-- **AI Integration**: MCP servers enable AI assistants to use the marketplace
+- **AI Integration**: 
+  - DCM MCP Server: Upload/download marketplace content
+  - SQD MCP Server: Generate datasets from blockchain data
 - **Price Discovery**: On-chain pricing with flexible payment addresses
 - **Real-time Updates**: Blockchain events indexed within seconds
 
