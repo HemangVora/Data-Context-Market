@@ -1,12 +1,16 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import "@openzeppelin/contracts/access/Ownable.sol";
+
 /**
  * @title DataContextMarketRegistry
  * @dev Registry for DCM (Data Context Market) data with pricing information
  * @notice Stores and retrieves data metadata including description, price, and payment address
  */
-contract DataContextMarketRegistry {
+contract DataContextMarketRegistry is Ownable {
+    constructor() Ownable(msg.sender) {}
+
     // Struct to store data information
     struct DataInfo {
         string description;
@@ -59,7 +63,7 @@ contract DataContextMarketRegistry {
         string memory _payAddress,
         string memory _name,
         string memory _filetype
-    ) public {
+    ) public onlyOwner {
         // Check if data already exists
         require(
             bytes(dataRegistry[_pieceCid].description).length == 0,
@@ -140,7 +144,7 @@ contract DataContextMarketRegistry {
      * @param _pieceCid the PieceCID that was downloaded
      * @param _x402TxHash the x402 payment transaction hash (optional, can be empty string)
      */
-    function register_download(string memory _pieceCid, string memory _x402TxHash) public {
+    function register_download(string memory _pieceCid, string memory _x402TxHash) public onlyOwner {
         // Verify that the data is registered
         DataInfo memory data = dataRegistry[_pieceCid];
         require(
