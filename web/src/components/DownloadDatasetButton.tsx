@@ -35,11 +35,36 @@ export function DownloadDatasetButton({
   >("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const [showConnectPrompt, setShowConnectPrompt] = useState(false);
-
   const handleDownload = async () => {
     if (!isSignedIn) {
-      setShowConnectPrompt(true);
+      // Trigger the navbar connect button
+      // Try specific selectors for OnchainKit button
+      const selectors = [
+        'nav button[data-testid="ockConnectWalletButton"]',
+        "nav .ock-connect-button",
+        'nav button[type="button"]',
+      ];
+
+      for (const selector of selectors) {
+        const btn = document.querySelector(selector);
+        if (btn instanceof HTMLElement) {
+          btn.click();
+          return;
+        }
+      }
+
+      // Fallback: look for button text
+      const buttons = document.querySelectorAll("nav button");
+      for (const btn of buttons) {
+        if (
+          btn.textContent?.includes("Sign in") ||
+          btn.textContent?.includes("Connect")
+        ) {
+          (btn as HTMLElement).click();
+          return;
+        }
+      }
+
       return;
     }
 
@@ -124,69 +149,24 @@ export function DownloadDatasetButton({
         >
           <AlertCircle className="w-4 h-4" />
         </button>
-        {errorMessage && <p className="text-xs text-red-400">{errorMessage}</p>}
+        {errorMessage && (
+          <p className="text-xs text-red-400">{errorMessage}</p>
+        )}
       </div>
     );
   }
 
   return (
-    <>
-      <button
-        onClick={handleDownload}
-        disabled={isProcessing || downloadState === "processing"}
-        className="flex items-center justify-center p-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 disabled:bg-neutral-900 disabled:cursor-not-allowed transition-all text-sm font-medium text-white"
-      >
-        {isProcessing || downloadState === "processing" ? (
-          <Loader2 className="w-4 h-4 animate-spin" />
-        ) : (
-          <Download className="w-4 h-4" />
-        )}
-      </button>
-
-      {showConnectPrompt && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-neutral-900 border border-white/10 rounded-2xl p-6 max-w-sm w-full shadow-2xl">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-full bg-blue-500/10 flex items-center justify-center text-blue-500">
-                <Wallet className="w-5 h-5" />
-              </div>
-              <h3 className="text-lg font-bold text-white">Connect Wallet</h3>
-            </div>
-            <p className="text-neutral-400 mb-6 text-sm leading-relaxed">
-              Please connect your wallet to download{" "}
-              <strong>{datasetName}</strong>. Accessing the dataset requires a
-              signature.
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setShowConnectPrompt(false)}
-                className="flex-1 px-4 py-2.5 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-sm font-medium text-neutral-300"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  setShowConnectPrompt(false);
-                  // Focus on the connect button in navbar or show an arrow
-                  const walletBtn = document.querySelector(
-                    '[data-testid="ockConnectWalletButton"]'
-                  ); // approximate selector for CDP button if available, otherwise generic instruction
-                  if (walletBtn instanceof HTMLElement) {
-                    walletBtn.click();
-                  } else {
-                    // If we can't find it programmatically, we rely on the user finding it.
-                    // Maybe scroll to top?
-                    window.scrollTo({ top: 0, behavior: "smooth" });
-                  }
-                }}
-                className="flex-1 px-4 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 transition-colors text-white text-sm font-medium"
-              >
-                I'll Connect
-              </button>
-            </div>
-          </div>
-        </div>
+    <button
+      onClick={handleDownload}
+      disabled={isProcessing || downloadState === "processing"}
+      className="flex items-center justify-center p-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 disabled:bg-neutral-900 disabled:cursor-not-allowed transition-all text-sm font-medium text-white"
+    >
+      {isProcessing || downloadState === "processing" ? (
+        <Loader2 className="w-4 h-4 animate-spin" />
+      ) : (
+        <Download className="w-4 h-4" />
       )}
-    </>
+    </button>
   );
 }
