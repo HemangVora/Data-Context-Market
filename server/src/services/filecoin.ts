@@ -2,9 +2,6 @@ import { Synapse, RPC_URLS } from "@filoz/synapse-sdk";
 import { createCipheriv, createDecipheriv, randomBytes } from "crypto";
 import { privateKey, rpcUrl } from "../config.js";
 
-// Valid dummy key for downloads (when private key not needed)
-const DUMMY_KEY = "0x0000000000000000000000000000000000000000000000000000000000000001";
-
 // Encryption constants
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 12; // 96 bits for GCM
@@ -94,15 +91,13 @@ function decryptData(encryptedData: Uint8Array): Uint8Array {
   }
 }
 
-async function getSynapse(requirePrivateKey: boolean = false): Promise<Synapse> {
-  const key = privateKey || DUMMY_KEY;
-  
-  if (requirePrivateKey && (!privateKey || privateKey === "your_private_key_here")) {
-    throw new Error("PRIVATE_KEY is required for this operation");
+async function getSynapse(): Promise<Synapse> {
+  if (!privateKey || privateKey === "your_private_key_here") {
+    throw new Error("PRIVATE_KEY is required for Filecoin operations");
   }
 
   return await Synapse.create({
-    privateKey: key,
+    privateKey: privateKey,
     rpcURL: rpcUrl || RPC_URLS.calibration.http,
   });
 }
@@ -123,7 +118,7 @@ export async function downloadFromFilecoin(pieceCid: string): Promise<{
   message?: string;
 }> {
   console.log(`[FILEcoin] Starting download for PieceCID: ${pieceCid}`);
-  const synapse = await getSynapse(false);
+  const synapse = await getSynapse();
   
   console.log(`[FILEcoin] Downloading encrypted bytes from Filecoin...`);
   const encryptedBytes = await synapse.storage.download(pieceCid);
@@ -301,7 +296,7 @@ export async function downloadFromFilecoin(pieceCid: string): Promise<{
  */
 export async function getFileSizeFromFilecoin(pieceCid: string): Promise<number> {
   console.log(`[FILE_SIZE] Starting file size fetch for PieceCID: ${pieceCid}`);
-  const synapse = await getSynapse(false);
+  const synapse = await getSynapse();
   
   console.log(`[FILE_SIZE] Downloading encrypted bytes from Filecoin...`);
   const encryptedBytes = await synapse.storage.download(pieceCid);
@@ -438,7 +433,7 @@ export async function uploadToFilecoin(
   pieceCid: string;
   size: number;
 }> {
-  const synapse = await getSynapse(true);
+  const synapse = await getSynapse();
   
   let dataBytes: Uint8Array;
   
