@@ -1,6 +1,10 @@
-# Data Context Market (DCM)
-
-A decentralized marketplace for buying and selling data using Filecoin storage, blockchain indexing, and AI-powered discovery through x402 micropayments.
+<div align="center">
+  <img src="img/logo.png" alt="Data Context Market" width="100"/>
+  
+  # Data Context Market (DCM)
+  
+  A decentralized marketplace for buying and selling data leveraging Filecoin storage, blockchain indexing with SQD, x402 micropayments and easy onboarding with CDP embedded wallets.
+</div>
 
 ---
 
