@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { BrainCircuit } from "lucide-react";
 import { WalletButton } from "@/components/WalletButton";
+import { USDCBalance } from "@/components/USDCBalance";
 
 export function Navbar() {
   return (
@@ -30,7 +31,10 @@ export function Navbar() {
           </Link>
         </div>
 
-        <WalletButton />
+        <div className="flex items-center gap-3">
+          <USDCBalance />
+          <WalletButton />
+        </div>
       </div>
     </nav>
   );
