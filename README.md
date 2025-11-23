@@ -161,4 +161,12 @@ cd web && npm install && npm run dev
 
 ---
 
+## 🤖 AI Tools Attribution
+
+This project was built with assistance from AI tools:
+- **Claude Desktop**: Used for testing and developing MCP tools
+- **Cursor & Claude Code**: Provided coding assistance throughout the monorepo development
+
+---
+
 Built for ETHGlobal. See component READMEs for detailed setup.
